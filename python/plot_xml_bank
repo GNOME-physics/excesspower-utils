@@ -1,0 +1,218 @@
+#!/usr/bin/env python
+#
+# Copyright (C) 2013 Chris Pankow
+#
+# This program is free software; you can redistribute it and/or modify it
+# under the terms of the GNU General Public License as published by the
+# Free Software Foundation; either version 2 of the License, or (at your
+# option) any later version.
+#
+# This program is distributed in the hope that it will be useful, but
+# WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General
+# Public License for more details.
+#
+# You should have received a copy of the GNU General Public License along
+# with this program; if not, write to the Free Software Foundation, Inc.,
+# 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
+"""Plot a set of 'burst templates' from an XML bank of sngl_bursts"""
+
+import sys
+import math
+import random
+from optparse import OptionParser
+import ConfigParser
+from ConfigParser import SafeConfigParser
+
+import matplotlib
+matplotlib.use("Agg")
+from matplotlib import pyplot, gridspec
+from matplotlib.collections import PatchCollection
+
+import numpy
+
+from glue.ligolw import utils, table, lsctables
+from gstlal import excesspower as ep
+
+#
+# Utility functions
+#
+
+def get_templates(args):
+	"""
+	Get all sngl_burst rows from the args provided. Returns the bank and the tuple of parameters describing the bank's TF properties.
+	"""
+	sbtable = table.get_table(utils.load_filename(args[0]), lsctables.SnglBurstTable.tableName)
+	for arg in args[1:]:
+		sbtable.extend(table.get_table(utils.load_filename(arg), lsctables.SnglBurstTable))
+
+	bands = sorted(map(lambda sb: sb.bandwidth, sbtable))
+	durations = sorted(map(lambda sb: sb.duration, sbtable))
+	dof = sorted(map(lambda sb: sb.chisq_dof, sbtable))
+	lfreq = sorted(map(lambda sb: sb.flow, sbtable))
+	hfreq = sorted(map(lambda sb: sb.fhigh, sbtable))
+	lowf, highf = min(lfreq), max(hfreq)
+	min_band, max_band = min(bands), max(bands)
+	min_dof, max_dof = min(dof), max(dof)
+	min_dur, max_dur = min(durations), max(durations)
+	return sbtable, (min_band, max_band, min_dur, max_dur, min_dof, max_dof, lowf, highf)
+
+def make_templates(band, max_res, opts):
+	"""
+	Call the EP library to generate a set of templates, and form a sngl_burst table from their concatenation.
+	"""
+
+	if max_res is None:
+		max_res = int(math.log(opts.max_bandwidth or opts.highf-opts.lowf, 2))
+		max_res -= int(math.log(band, 2))
+
+	sbtable = None
+	band = opts.min_bandwidth
+	res_level = 0
+	while res_level <= max_res:
+		ndof = 2
+		while ndof <= opts.max_dof:
+			print "Making resolution level %d, %d DOF" % (res_level, ndof)
+			xmldoc = ep.create_bank_xml(flow=opts.lowf, fhigh=opts.highf, band=band, duration=1.0/2/band, level=res_level, ndof=ndof, frequency_overlap=opts.frequency_overlap, detector="H1")
+			if sbtable is None:
+				sbtable = table.get_table(xmldoc, lsctables.SnglBurstTable.tableName )
+			else:
+				sbtable.extend(table.get_table(xmldoc, lsctables.SnglBurstTable.tableName))
+			ndof = ndof << 1
+		band *= 2 # * frequency_overlap
+		res_level += 1
+	return sbtable
+
+#
+# Option parsing
+#
+
+optp = OptionParser()
+optp.add_option("-f", "--fap", type=float, default=1e-8, help="False alarm probability of search. Default is 1e-8")
+optp.add_option("-F", "--frequency-overlap", type=float, default=0.0, help="Overlap of tiles in frequency. Default is 0, valid range is 0 <= f < 1.")
+optp.add_option("-d", "--max-duration", type=float, default=None, help="Maximum duration of a tile. Default is auto.")
+optp.add_option("-B", "--max-bandwidth", type=float, default=None, help="Maximum bandwidth of a tile. Default is limited by the total bandwidth of the search.")
+optp.add_option("-b", "--min-bandwidth", type=float, default=None, help="Minimum bandwidth of a tile. Required if not providing a bank XML file.")
+optp.add_option("-D", "--max-dof", type=float, default=None, help="Maximum DOF of a tile.")
+optp.add_option("-l", "--lowf", type=float, help="Lowest frequency of the search.")
+optp.add_option("-H", "--highf", type=float, help="Highest frequency of the search.")
+optp.add_option("-o", "--output-name", type=str, default="bank", help="File name to output to (no file extension). Default is 'bank'")
+optp.add_option("-c", "--from-configuration", help="Draw parameters from configuration file.")
+opts, args = optp.parse_args()
+
+#
+# Define tile and TF map properties
+#
+
+args_are_provided = len(args) > 0
+
+if opts.from_configuration:
+	cfg = SafeConfigParser()
+	cfg.read( opts.from_configuration )
+	opts.min_bandwidth = opts.min_bandwidth or cfg.getfloat( "tf_parameters", "base-resolution" )
+	max_band = opts.min_bandwidth * 2**(cfg.getint( "tf_parameters", "max-resolution-level" )-1)
+	min_duration, opts.max_duration = 1.0/2/max_band, opts.max_duration or cfg.getfloat( "tf_parameters", "max-time-resolution" )
+	# FIXME: Need an option for fix-dof
+	min_dof, opts.max_dof = 2, opts.max_dof or cfg.getint( "tf_parameters", "max-dof" )
+	opts.lowf, opts.highf = opts.lowf or cfg.getfloat( "tf_parameters", "min-frequency" ), opts.highf or cfg.getfloat( "tf_parameters", "max-frequency" )
+	opts.fap = cfg.getfloat( "triggering", "fap-thresh" )
+
+else:
+	# FIXME: Max resolution level
+	max_band = 2**int(math.log(opts.highf-opts.lowf, 2))
+	if not args_are_provided and opts.min_bandwidth is None:
+		raise ArgumentError("Either provide a template bank XML, or specify the minimum bandwidth")
+	if not args_are_provided and opts.max_dof is None and opts.max_duration is None:
+		raise ArgumentError("Either provide a template bank XML, or specify the maximum duration or maximum DOF.")
+	elif opts.max_dof is not None and opts.max_duration is None:
+		opts.max_dof = 2*opts.max_duration*max_band
+		opts.max_duration = opts.max_dof/2.0/opts.min_bandwidth
+	elif opts.max_dof is not None and opts.max_duration is not None:
+		opts.max_duration = opts.max_dof/2.0/opts.min_bandwidth
+		opts.max_dof = 2*opts.max_duration*max_band
+
+	min_duration = 1.0/max_band
+
+if args_are_provided:
+	sbtable, params = get_templates(args)
+	opts.min_bandwidth = opts.min_bandwidth or params[0]
+	max_band = max_band or params[1]
+	min_duration, opts.max_duration = min_duration or params[2], opts.max_duration or params[3]
+	min_dof, opts.max_dof = 2 or params[4], opts.max_dof or params[5]
+	opts.lowf, opts.highf = opts.lowf or params[6], opts.highf or params[7]
+else:
+	sbtable = make_templates(opts.min_bandwidth, None, opts)
+
+#
+# Plot bank
+#
+
+print """
+Will plot tiles with the following properties:
+frequency extent within the bandwidth: %f, %f
+bandwidths between: %f %f
+durations between: %f %f
+DOF %f %f
+""" % (opts.lowf, opts.highf, opts.min_bandwidth, max_band, min_duration, opts.max_duration, 2, opts.max_dof)
+
+fig = pyplot.figure()
+# Get us space for a colorbar
+gs = gridspec.GridSpec(1, 2, width_ratios=[11,1])
+ax = pyplot.subplot(gs[0])
+
+#
+# Gather statistics and remove tiles not in search bandwidth
+#
+
+snrs, tiles = [], []
+for sb in sorted(sbtable, key=lambda sb: (sb.snr, sb.bandwidth, sb.duration)):
+	sb.snr = ep.determine_thresh_from_fap(opts.fap, sb.chisq_dof)
+	#print sb.snr, sb.flow, sb.bandwidth, sb.duration, sb.chisq_dof
+	snrs.append(sb.snr)
+
+	if sb.fhigh > opts.highf or sb.flow < opts.lowf: continue
+
+	tiles.append((sb.duration, sb.central_freq, sb.snr, sb.bandwidth/2.0))
+
+	#tile = matplotlib.patches.Rectangle((min_duration/2, sb.flow), sb.duration, sb.bandwidth)
+	#tiles.append(tile)
+
+# For frequency / duration scatter plot
+tiles = zip(*tiles)
+pyplot.scatter(tiles[0], tiles[1], c=tiles[2], edgecolor="none")
+pyplot.errorbar(tiles[0], tiles[1], yerr=tiles[3], fmt=None, ecolor='k')
+#pyplot.ylim([lowf, highf])
+pyplot.ylim([0, opts.highf])
+pyplot.xlim([min_duration/2, opts.max_duration*2])
+ax.set_xscale('log', basex=2)
+#ax.set_yscale('log', basey=2)
+pyplot.xlabel("Tile duration (s)")
+pyplot.ylabel("Tile central frequency (Hz)")
+pyplot.title("All tiles with NDOF <= %d" % int(opts.max_dof))
+pyplot.grid()
+pyplot.savefig( "bank.png" )
+
+# For overlapping colorized tiles
+"""
+pyplot.ylim([lowf, highf])
+pyplot.xlim([min_duration/2, opts.max_duration])
+#pyplot.semilogy()
+ax.set_xscale('log', basex=2)
+ax.set_yscale('log', basey=2)
+#pyplot.loglog()
+patches = PatchCollection(tiles, match_original = False, cmap = matplotlib.cm.jet, antialiased = False)
+patches.set_array( numpy.array(snrs) )
+ax.add_collection( patches )
+pyplot.xlabel("Tile duration (s)")
+pyplot.ylabel("Tile bandwidth (Hz)")
+pyplot.grid()
+"""
+
+cax = pyplot.subplot(gs[1])
+snr_norm = matplotlib.colors.Normalize(min(snrs), max(snrs))
+cbl = matplotlib.colorbar.ColorbarBase(cax, cmap=matplotlib.cm.jet, norm=snr_norm, orientation="vertical")
+cbl.set_label("Tile amplitude threshold in Gaussian noise")
+
+fname =  "%s.png" % opts.output_name
+pyplot.savefig(fname)
+print "Image saved to %s" % fname

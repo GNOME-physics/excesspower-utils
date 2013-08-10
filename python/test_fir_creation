@@ -1,0 +1,82 @@
+#!/usr/bin/env python
+
+import matplotlib
+matplotlib.use("Agg")
+from matplotlib import pyplot
+
+from pylal.series import read_psd_xmldoc, make_psd_xmldoc
+from glue.ligolw import utils, table, lsctables
+import lal
+from pylal.xlal.datatypes.real8timeseries import REAL8TimeSeries
+
+from gstlal import excesspower as ep
+
+import eputils
+
+import numpy
+
+psd = read_psd_xmldoc( utils.load_filename("ZERO_DET_high_P.xml") )["H2"]
+psd.data = 1.0/psd.data
+
+corr = numpy.zeros(2049)
+corr[0] = 1.0
+
+# Old filter generation
+#tdb, fdb = ep.build_filter( psd, rate=16384, flow=16, fhigh = 8000, filter_len = 0, b_wind = 4, corr = corr)
+
+# XML based filter generation
+# This needs to be 1 DOF because that's the filter length
+xmldoc = ep.create_bank_xml(flow=16, fhigh=8000, band=4, duration=1/8.0, level=0, ndof=1, frequency_overlap=0, detector="H1")
+utils.write_filename( xmldoc, "gstlal_excesspower_bank_0_1.xml" )
+
+sbtable = table.get_table(xmldoc, lsctables.SnglBurstTable.tableName)
+# FIXME: Flat spectrum
+psd.data = numpy.ones(len(psd.data)) * 1.0/len(psd.data)
+tdb_xml, fdb_xml = ep.build_filter_from_xml( psd, sbtable, corr = corr)
+
+fdb_bank_series = dict([ (str(fdf.f0), fdf) for fdf in fdb_xml ])
+utils.write_filename(eputils.make_fseries_xmldoc(fdb_bank_series), "gstlal_excesspower_FD_bank.xml")
+
+def make_tseries(npar):
+	epoch=lal.LIGOTimeGPS(0,0)
+	ts = REAL8TimeSeries( "", lal.LIGOTimeGPS(0,0), 0, 1.0/16384, lal.lalStrainUnit, npar )
+	ts.deltaT = 1.0/16384
+	ts.data = npar
+	return ts
+#tdb_xml = map(make_tseries, tdb_xml)
+
+# FIXME: Too big
+#tdb_bank_series = dict([ (str(sbe.flow), tdf) for (sbe, tdf) in zip(sbtable, tdb_xml) ])
+#utils.write_filename(eputils.make_tseries_xmldoc(tdb_bank_series), "gstlal_excesspower_TD_bank.xml")
+
+def make_ep_td_filter(b, f, tlen, dt, sinamp=1, cosamp=0):
+	t = numpy.linspace(-tlen/2, tlen/2, tlen)*dt
+	return numpy.cos(2*numpy.pi*f*t) / (2*numpy.pi*t) * \
+		(cosamp*4*b**2*t**2*numpy.cos(numpy.pi*b*t) + \
+		sinamp*(1-4*b**2*t**2)*numpy.sin(numpy.pi*b*t)) / \
+		(1-4*b**2*t**2)
+
+# test the filter response
+for tdf, sbe in zip(tdb_xml, sbtable):
+	numpy.savetxt( "td_filters/td_filter_%d" % int(sbe.central_freq), tdf )
+	#numpy.save( "td_filters/td_filter_%d" % int(sbe.central_freq), tdf )
+
+exit()
+# test overlapping channels
+"""
+xmldoc = ep.create_bank_xml(flow=16, fhigh=8000, band=4, duration=1/8.0, level=0, ndof=1, frequency_overlap=0.5, detector="H1")
+sbtable = table.get_table(xmldoc, lsctables.SnglBurstTable.tableName)
+tdb_xml2, fdb_xml2 = ep.build_filter_from_xml( psd, sbtable, corr = corr)
+utils.write_filename( xmldoc, "gstlal_excesspower_bank_overlap_0_1.xml" )
+"""
+
+norm = []
+norm_overlap = []
+for i in range(5):
+	print i
+	norm.append( ep.build_wide_filter_norm(corr, fdb, i, 0, 16.0, psd) )
+	print norm[-1]
+	norm_overlap.append( ep.build_wide_filter_norm(corr, fdb_xml2, i, 0.5, 16.0, psd) )
+	print norm_overlap[-1]
+
+#print len(tdb)

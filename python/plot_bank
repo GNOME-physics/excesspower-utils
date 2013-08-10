@@ -1,0 +1,45 @@
+#!/usr/bin/env python
+
+import sys
+
+import numpy
+
+import matplotlib
+matplotlib.use("Agg")
+from matplotlib import pyplot
+
+from pylal.series import read_psd_xmldoc
+from glue.ligolw import utils, table, lsctables
+
+from eputils import read_fseries_xmldoc
+
+fdbank, xmlbank = sys.argv[1:]
+
+fdbank = read_fseries_xmldoc(utils.load_filename(fdbank))
+xmlbank = table.get_table(utils.load_filename(xmlbank), lsctables.SnglBurstTable.tableName)
+xmlbank = dict(zip([sb.flow - sb.bandwidth/2.0 for sb in xmlbank], xmlbank))
+
+fig = pyplot.figure()
+i=0
+for freq, fdf in sorted(fdbank.iteritems(), key=lambda t: float(t[0])):
+	#print freq
+	sbe = xmlbank[float(fdf.f0)]
+	f = numpy.linspace(fdf.f0, fdf.f0+len(fdf.data)*fdf.deltaF, len(fdf.data))
+	pyplot.plot(f, abs(fdf.data), "k-")
+
+	# Make virtual filter from XML
+	virtual_filter = numpy.hanning(len(fdf.data))
+	pyplot.plot(f, abs(virtual_filter), "r-")
+	#print sbe.bandwidth, fdf.deltaF
+	#print numpy.dot(abs(fdf.data), abs(fdf.data))/sbe.bandwidth*fdf.deltaF
+	#print numpy.dot(abs(fdf.data), virtual_filter)/sbe.bandwidth*fdf.deltaF
+	if i >= 2:
+		break
+	else:
+		i+=1
+
+pyplot.axhline(0.5)
+pyplot.ylim([-0.1, 1])
+
+pyplot.grid()
+pyplot.savefig( "gstlal_excesspower_FD_bank.png" )
