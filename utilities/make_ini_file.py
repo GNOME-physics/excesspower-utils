@@ -8,6 +8,8 @@ instrument=%(inst)s
 sample_rate=%(rate)s
 ini_file=%(ini)s
 odc_channel=%(odc)s
+on_bits=%(on_bits)s
+off_bits=%(off_bits)s
 """
 
 def infer_odc(chan, odc_channels):
@@ -58,4 +60,4 @@ for line in lines:
 
 	odc_chan = infer_odc(chan, odc_channels)
 	inifile = "/home/detchar/excesspower/%s/channel_ini/gstlal_excesspower_%s_%s_%s.ini" % (det, det.lower(), sub.lower(), rate)
-	print entry % {"channel": chan, "rate": rate, "inst": det, "ini": inifile, "odc": odc_chan }
+	print entry % {"channel": chan, "rate": rate, "inst": det, "ini": inifile, "odc": odc_chan or "", "on_bits": "0x1", "off_bits": "0x0" }
