@@ -1,0 +1,153 @@
+#!/usr/bin/env python
+#
+# Copyright (C) 2013 Chris Pankow
+#
+# This program is free software; you can redistribute it and/or modify it
+# under the terms of the GNU General Public License as published by the
+# Free Software Foundation; either version 3 of the License, or (at your
+# option) any later version.
+#
+# This program is distributed in the hope that it will be useful, but
+# WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General
+# Public License for more details.
+#
+# You should have received a copy of the GNU General Public License along
+# with this program; if not, write to the Free Software Foundation, Inc.,
+# 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
+
+import re
+import sys
+import random
+import math
+from optparse import OptionParser
+
+from glue.ligolw import utils, table, lsctables, ligolw
+from glue.ligolw.utils import process
+
+from collections import namedtuple, defaultdict
+
+#
+# Basically a row type for a BurstMDC entry
+#
+BurstMDCEntry = namedtuple( "BurstMDCEntry", "GravEn_SimID        SimHrss      SimEgwR2    GravEn_Ampl  Internal_x   Internal_phi   External_x   External_phi  External_psi  FrameGPS     EarthCtrGPS     SimName               SimHpHp      SimHcHc      SimHpHc    GEO      GEOctrGPS       GEOfPlus       GEOfCross       GEOtErr       GEOcErr       GEOsnr  H1       H1ctrGPS        H1fPlus        H1fCross        H1tErr        H1cErr        H1snr  H2       H2ctrGPS        H2fPlus        H2fCross        H2tErr        H2cErr        H2snr  L1       L1ctrGPS        L1fPlus        L1fCross        L1tErr        L1cErr        L1snr  V1       V1ctrGPS        V1fPlus        V1fCross        V1tErr        V1cErr        V1snr" )
+
+def parse_waveform_type( simname ):
+	"""
+	Convert a BurstMDC waveform type into the equivalent sim_burst type.
+	"""
+	if "WNB" in simname:
+		return "BTLWNB"
+	elif "SG" in simname or "CG" in simname:
+		return "SineGaussian"
+	else: 
+		return simname
+
+def parse_sg_params( simname ):
+	"""
+	Parse out the relevant SG parameters from the BurstMDC type name.
+	"""
+	try:
+		p1, p2 = simname.split(";") # CSG
+	except ValueError:
+		p1 = simname
+
+	p1 = p1.split("/")[-1]
+	sgreg = re.compile( "[C|S]G(\d+)Q(\d+)" )
+	m = re.match( sgreg, p1 )
+	if m is None:
+		raise ValueError( "Could not parse SG params from string %s " % p1 )
+	return float(m.group(1)), float(m.group(2))
+
+def parse_wnb_params( simname ):
+	"""
+	Parse out the relevant WNB parameters from the BurstMDC type name.
+	"""
+	raise NotImplementedError
+
+def import_burstmdc_log( fname, pid, tsid, simb_table = None ):
+	"""
+	Convert the BurstMDC log fname into a SimBurst table with appropriately linked process and time_slide ids.
+	"""
+	if simb_table is None:
+		simb_table = lsctables.New( lsctables.SimBurstTable, lsctables.SimBurstTable.validcolumns.keys() )
+	simb_table.sync_next_id()
+	for line in open(fname).readlines():
+ 		if line.strip()[0] == "#":
+			continue
+
+		row = simb_table.RowType()
+		entry = BurstMDCEntry( *line.split() )
+		lal_waveform_type = parse_waveform_type( entry.GravEn_SimID )
+		row.waveform = lal_waveform_type
+		row.hrss = float(entry.SimHrss)
+		row.egw_over_rsquared = float(entry.SimEgwR2)
+		row.time_geocent_gps = int(float(entry.EarthCtrGPS))
+		row.time_geocent_gps_ns = int(1e9*(float(entry.EarthCtrGPS)-row.time_geocent_gps ))
+		row.psi = float(entry.External_psi)
+		row.amplitude = float(entry.GravEn_Ampl)
+		row.waveform_number = random.randint(0, 1e16)
+		row.simulation_id = simb_table.get_next_id()
+		# FIXME: Only valid for SG
+		row.pol_ellipse_e = 1.0
+		row.pol_ellipse_angle = math.pi/2
+		if lal_waveform_type == "SineGaussian":
+			row.frequency, row.q = parse_sg_params( entry.SimName )
+			row.duration, row.bandwidth = None, None
+		elif lal_waveform_type == "BTLWNB":
+			row.duration, row.frequency, row.bandwidth = parse_wnb_params( entry.SimName )
+			row.q = None
+		else:
+			#row.duration, row.frequency, row.bandwidth = None, None, None
+			row.duration, row.frequency, row.bandwidth, row.q = None, None, None, None
+		row.process_id = pid
+		row.ra = float(entry.External_phi)
+		row.dec = float(entry.External_x)
+		# FIXME: Too lazy
+		row.time_geocent_gmst = 0.0
+		row.time_slide_id = tsid
+		
+		simb_table.append( row )
+	return simb_table
+
+#
+# Main
+#
+
+optp = OptionParser()
+optp.add_option( "-i", "--input-file", action="store", help="This file is required to have a time_slide table. Required." )
+optp.add_option( "-o", "--output-file", action="store", default=None, help="Write the output to this file. Default is stdout." )
+options, args = optp.parse_args()
+
+# get the xmldoc we'll we working with
+xmldoc = utils.load_filename( options.input_file )
+time_slide_table = table.get_table( xmldoc, lsctables.TimeSlideTable.tableName )
+
+pids = defaultdict(list)
+for ts in time_slide_table:
+	pids[ts.time_slide_id].append( ts )
+
+if len(pids.keys()) > 1:
+	print >>sys.stderr, "More than one time slide was found. Assigning injections to the first found."
+tsid = pids.keys()[0]
+
+# Append the process information
+procrow = utils.process.append_process( xmldoc )
+utils.process.append_process_params( xmldoc, procrow, 
+	utils.process.process_params_from_dict(options.__dict__) )
+
+# Try to get the SimBurst table if it already exists, otherwise, create a new
+# one and append as necessary
+try:
+	simbursts = table.get_table( time_slide_table, lsctables.SimBurstTable.tableName )
+	for arg in args:
+		simbursts.append( import_burstmdc_log( arg, procrow.process_id, tsid, simbursts ) )
+	
+except ValueError:
+	simbursts = import_burstmdc_log( args[0], procrow.process_id, tsid )
+	for arg in args[1:]:
+		simbursts.append( import_burstmdc_log( arg, procrow.process_id, tsid, simbursts ) )
+	# Add the sim burst table
+	xmldoc.childNodes[0].childNodes.append( simbursts )
+
+utils.write_filename( xmldoc, options.output_file ) 
