@@ -26,7 +26,9 @@ optp.add_option("-o", "--output", action="store", help="Name of the file to save
 opts, args = optp.parse_args()
 
 defaults = {
-	'sample_rate': 4096
+	'sample_rate': 4096,
+	'on_bits': 0x1,
+	'off_bits': 0x0
 	#'ini_file': 'gstlal_excesspower_generic.ini'
 }
 
@@ -36,7 +38,7 @@ VARS %(job_name)s instrument="%(instrument)s" channel="%(channel)s" sample_rate=
 dagentry_time = """gps_start="%(gps_start)d" gps_end="%(gps_end)d" """
 # FIXME: Don't hardcode the blocksize
 dagentry_block = """blocksize="131072" """
-dagentry_dq = "dq_channel=\"%(odc_channel)s\" "
+dagentry_dq = "dq_channel=\"%(odc_channel)s\" on_bits=\"%(on_bits)s\" off_bits=\"%(off_bits)s\""
 
 inifile = os.path.abspath( opts.initialization_file )
 cfg = SafeConfigParser()
@@ -44,12 +46,6 @@ cfg.read( inifile )
 
 subfile = opts.submit_file
 
-"""
-Example entry in channels.ini
-[L1:PSL-ISS_PDA_OUT_DQ]
-bit_width=32
-sample_rate=4096
-"""
 inireg = re.compile( "\.ini" )
 if opts.output is not None:
 	dagfile = opts.output
