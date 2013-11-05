@@ -38,7 +38,7 @@ VARS %(job_name)s instrument="%(instrument)s" channel="%(channel)s" sample_rate=
 dagentry_time = """gps_start="%(gps_start)d" gps_end="%(gps_end)d" """
 # FIXME: Don't hardcode the blocksize
 dagentry_block = """blocksize="131072" """
-dagentry_dq = "dq_channel=\"%(odc_channel)s\" on_bits=\"%(on_bits)s\" off_bits=\"%(off_bits)s\""
+dagentry_dq = "dq_channel=\"%(odc_channel)s\" on_bits=\"%(on_bits)s\" off_bits=\"%(off_bits)s\" "
 
 inifile = os.path.abspath( opts.initialization_file )
 cfg = SafeConfigParser()
@@ -149,7 +149,7 @@ for seg in slist:
 		if not opts.no_segments:
 			sec['gps_start'] = seg[0]
 			sec['gps_end'] = seg[1]
-			sec['job_name'] = channel + "_" + seg[0]
+			sec['job_name'] = channel + "_" + str(seg[0])
 			append += dagentry_time % sec
 			append += dagentry_block
 		print >>dagfile, (dagentry % sec) + append
