@@ -1,0 +1,107 @@
+#!/usr/bin/env python
+#
+# Copyright (C) 2013 Chris Pankow
+#
+# This program is free software; you can redistribute it and/or modify it
+# under the terms of the GNU General Public License as published by the
+# Free Software Foundation; either version 2 of the License, or (at your
+# option) any later version.
+#
+# This program is distributed in the hope that it will be useful, but
+# WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General
+# Public License for more details.
+#
+# You should have received a copy of the GNU General Public License along
+# with this program; if not, write to the Free Software Foundation, Inc.,
+# 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
+"""Convert a structure ASCII list to a SimInspiral or SimBurst table"""
+
+import sys
+from optparse import OptionParser
+
+import numpy
+
+from glue.ligolw import utils, ligolw, lsctables, ilwd
+from glue.ligolw.utils import process
+
+TYPE_CONV = { "lstring": str,
+    "ilwd:char": ilwd.ilwdchar,
+    "real_8": float,
+    "real_4": float,
+    "int_4s": int,
+    "int_8s": int,
+    "int_8u": int,
+    "int_8u": int
+}
+
+DEFAULT_VALUES = { "lstring": "",
+    "ilwd:char": "dummy_table:dummy_table_id:0",
+    "real_8": 0.0,
+    "real_4": 0.0,
+    "int_4s": 0,
+    "int_8s": 0,
+    "int_4u": 0,
+    "int_8u": 0
+}
+
+optp = OptionParser()
+optp.add_option("--parse-burst", action="append", help="Parse ASCII file and create a SimBurstTable from it. Specify multiple times to append.")
+optp.add_option("--parse-inspiral", action="append", help="Parse ASCII file and create a SimInspiralTable from it. Specify multiple times to append.")
+optp.add_option("--fill-in-values", action="store_true", help="Fill in columns which do not appear in ASCII table with a sensible value.")
+#optp.add_option("--randomize-columns", action="store_true", help="Fill in columns which do not appear in ASCII table with a sensible *random* value.")
+optp.add_option("--output-file", help="Output file will be named this, gzipping detected automatically. Default is stdout.")
+opts, args = optp.parse_args()
+
+#
+# Set up XML document
+#
+xmldoc = ligolw.Document()
+xmldoc.appendChild(ligolw.LIGO_LW())
+procid = process.register_to_xmldoc(xmldoc, sys.argv[0], opts.__dict__).process_id
+
+parse_tables = [(lsctables.SimInspiralTable, arg) for arg in opts.parse_inspiral or []]
+parse_tables += [(lsctables.SimBurstTable, arg) for arg in opts.parse_burst or []]
+
+for tbltype, arg in parse_tables:
+    #
+    # We need to know what the columns actually are
+    #
+    with open(arg) as inpf:
+        cols = inp_cols = inpf.readline().split()[1:]
+        nprows = [line.split() for line in inpf.readlines() if line.split()[0] != "#"]
+
+    #
+    # Set up the Sim table
+    #
+    inp_cols += ["process_id", "simulation_id"]
+    valid_cols = tbltype.validcolumns.keys()
+    if opts.fill_in_values:
+        cols = list(set(inp_cols + valid_cols))
+    if set(inp_cols) | set(valid_cols) != set(valid_cols):
+        sys.exit("Column names must be a proper subset of the valid columns of the table.")
+    sim_table = lsctables.New(tbltype, cols)
+
+    #
+    # Parse data
+    #
+    for nprow in nprows:
+        sim_row = sim_table.RowType()
+        if opts.fill_in_values:
+            for col in cols:
+                setattr(sim_row, col, DEFAULT_VALUES[sim_table.validcolumns[col]])
+        sim_row.process_id = procid
+        sim_row.simulation_id = sim_table.get_next_id()
+        for col, dat in zip(inp_cols, nprow):
+            setattr(sim_row, col, TYPE_CONV[sim_table.validcolumns[col]](dat))
+        sim_table.append(sim_row)
+
+    xmldoc.childNodes[0].appendChild(sim_table)
+
+#
+# Finalize
+#
+if opts.output_file is None:
+    utils.write_fileobj(xmldoc, sys.stdout)
+else:
+    utils.write_filename(xmldoc, opts.output_file, gz=opts.output_file.endswith("gz"))
