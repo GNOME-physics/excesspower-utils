@@ -22,8 +22,12 @@ from optparse import OptionParser
 
 import numpy
 
+from pylal import inject
+import lal
+
 from glue.ligolw import utils, ligolw, lsctables, ilwd
 from glue.ligolw.utils import process
+from glue.lal import LIGOTimeGPS as gluegps
 
 TYPE_CONV = { "lstring": str,
     "ilwd:char": ilwd.ilwdchar,
@@ -44,6 +48,35 @@ DEFAULT_VALUES = { "lstring": "",
     "int_4u": 0,
     "int_8u": 0
 }
+
+def effective_distance_denom(fp, fx, iota):
+    ci_sq = numpy.cos(iota)**2
+    return numpy.sqrt(fp**2*(1+ci_sq)/4+fx**2*ci_sq)
+
+def sim_insp_defaults(row):
+    """
+    Since several of the columns in the sim_inspiral table are related, this is required to make everything consistent
+    """
+    import pdb; pdb.set_trace()
+    for d in ["l", "h", "v", "g", "t"]:
+        det = inject.cached_detector_by_prefix[d.upper()+"1"]
+        # FIXME: It's possible for this succeed with semi-insane, but defined
+        # values. Buyer beware.
+        try:
+            t = lal.LIGOTimeGPS(float(row.get_time_geocent()))
+            t += lal.TimeDelayFromEarthCenter(det.location, row.longitude, row.latitude, t)
+            # FIXME: Precision?
+            t_seconds = int(t)
+            setattr(row, "%s_end_time" % d, t_seconds)
+            setattr(row, "%s_end_time_ns" % d, int(1e9*float(t-t_seconds)))
+
+            if row.distance != 0.0:
+                fp, fx = inject.XLALComputeDetAMResponse(det.response, row.longitude, row.latitude, row.polarization, float(t))
+                setattr(row, "eff_distance_%s" % d, row.distance/effective_distance_denom(fp, fx, row.inclination))
+        except AttributeError:
+            pass
+
+TABLE_DEFAULT_FCN = { lsctables.SimInspiralTable: sim_insp_defaults }
 
 optp = OptionParser()
 optp.add_option("--parse-burst", action="append", help="Parse ASCII file and create a SimBurstTable from it. Specify multiple times to append.")
@@ -94,6 +127,9 @@ for tbltype, arg in parse_tables:
         sim_row.simulation_id = sim_table.get_next_id()
         for col, dat in zip(inp_cols, nprow):
             setattr(sim_row, col, TYPE_CONV[sim_table.validcolumns[col]](dat))
+
+        if TABLE_DEFAULT_FCN.has_key(tbltype):
+            TABLE_DEFAULT_FCN[tbltype](sim_row)
         sim_table.append(sim_row)
 
     xmldoc.childNodes[0].appendChild(sim_table)
