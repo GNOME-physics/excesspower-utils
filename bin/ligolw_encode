@@ -71,7 +71,7 @@ def sim_insp_defaults(row):
 
             if row.distance != 0.0:
                 fp, fx = inject.XLALComputeDetAMResponse(det.response, row.longitude, row.latitude, row.polarization, float(t))
-                setattr(row, "eff_distance_%s" % d, row.distance/effective_distance_denom(fp, fx, row.inclination))
+                setattr(row, "eff_dist_%s" % d, row.distance/effective_distance_denom(fp, fx, row.inclination))
         except AttributeError:
                 pass
         try:
