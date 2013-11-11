@@ -57,7 +57,6 @@ def sim_insp_defaults(row):
     """
     Since several of the columns in the sim_inspiral table are related, this is required to make everything consistent
     """
-    import pdb; pdb.set_trace()
     for d in ["l", "h", "v", "g", "t"]:
         det = inject.cached_detector_by_prefix[d.upper()+"1"]
         # FIXME: It's possible for this succeed with semi-insane, but defined
@@ -74,7 +73,13 @@ def sim_insp_defaults(row):
                 fp, fx = inject.XLALComputeDetAMResponse(det.response, row.longitude, row.latitude, row.polarization, float(t))
                 setattr(row, "eff_distance_%s" % d, row.distance/effective_distance_denom(fp, fx, row.inclination))
         except AttributeError:
-            pass
+                pass
+        try:
+            row.eta = (row.mass1*row.mass2)/(row.mass1+row.mass2)**2
+            row.mchirp = row.eta**(3/5.0)*(row.mass1+row.mass2)
+        except AttributeError:
+                pass
+
 
 TABLE_DEFAULT_FCN = { lsctables.SimInspiralTable: sim_insp_defaults }
 
