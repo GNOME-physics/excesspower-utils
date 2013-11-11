@@ -4,9 +4,9 @@ burst_stuff="# q bandwidth waveform\n
 3.0 0.1 BTLWNB\n
 15.0 1.0 SineGaussian"
 
-insp_stuff="# inclination waveform\n
-1.34 SpinTaylorT4\n
-0.45 EOBNRv2HM"
+insp_stuff="# inclination waveform distance geocent_end_time geocent_end_time_ns\n
+1.34 SpinTaylorT4 1000 1000000000 0\n
+0.45 EOBNRv2HM 2300 1000000000 100000"
 
 echo $burst_stuff > sb_test.dat
 echo $insp_stuff > si_test.dat
