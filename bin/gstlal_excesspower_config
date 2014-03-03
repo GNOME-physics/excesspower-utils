@@ -66,7 +66,7 @@ if opts.maximum_duration:
     if opts.verbose:
         print "Maximum DOF as determined from DOF and maximum duration is %d" % int(opts.maximum_duration*opts.sampling_rate)
 else:
-    cfg.set("tf_parameters", "max-duration", opts.maximum_dof/float(opts_sample_rate))
+    cfg.set("tf_parameters", "max-duration", opts.maximum_dof/float(opts.sampling_rate))
 
 cfg.add_section("triggering")
 cfg.set("triggering", "fap-thresh", "%e" % opts.fap_thresh)
