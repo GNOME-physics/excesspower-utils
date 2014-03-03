@@ -1,0 +1,93 @@
+#!/usr/bin/env python
+import sys
+from optparse import OptionParser
+from ConfigParser import ConfigParser
+
+import math
+
+optp = OptionParser()
+
+# Required in some way
+optp.add_option("-s", "--sampling-rate", type=int, help="Data rate at which to perform the search. Required.")
+optp.add_option("-f", "--minimum-frequency", type=float, help="Minimum frequency to search over. Required.")
+optp.add_option("-F", "--maximum-frequency", type=float, help="Maximum frequency to search over. Default is nyquist frequency.")
+
+# auto configure
+optp.add_option("-b", "--minimum-bandwidth", help="Minimum bandwidth to use. Default is to produce 1000 channels from the search bandwidth.")
+optp.add_option("-B", "--maximum-bandwidth", help="Maximum bandwidth to use. Default is to allow resolution levels up to the maximum bandwitdth allowed by the search bandwidth constraints.")
+optp.add_option("-n", "--maximum-dof", type=int, default=128, help="Maximum number of degrees of freedom in powers of two. Default is 128.")
+optp.add_option("-d", "--maximum-duration", type=float, help="Maximum duration tile to produce. Overrides maximum DOF if both are provided.")
+optp.add_option("-p", "--fap-thresh", type=float, default=1e7, help="False alarm probability threshold to apply. Default is 1e-7.")
+
+# output options
+optp.add_option("-o", "--configuration-file", help="Name of confguration file to write. Default is stdout")
+
+# Helpful options
+optp.add_option("-S", "--suggest-command-line", action="store_true", help="Suggest the command line to use for this particular configuration. Default is no.")
+optp.add_option("-v", "--verbose", action="store_true", help="Be verbose.")
+
+opts, args = optp.parse_args()
+
+if opts.minimum_frequency is None:
+    sys.exit("Required option --min-frequency is not present.")
+if opts.sampling_rate is None:
+    sys.exit("Required option --sampling-rate not present.")
+
+search_band = (opts.maximum_frequency or opts.sampling_rate/2) - opts.minimum_frequency
+max_frequency = opts.maximum_frequency or opts.sampling_rate/2
+assert max_frequency > opts.minimum_frequency
+
+cfg = ConfigParser()
+cfg.add_section("tf_parameters")
+cfg.set("tf_parameters", "min-frequency", opts.minimum_frequency)
+cfg.set("tf_parameters", "max-frequency", opts.maximum_frequency or opts.sampling_rate/2)
+
+search_band = max_frequency - opts.minimum_frequency
+nchannels = 1000
+if opts.minimum_bandwidth is not None:
+    cfg.set("tf_parameters", "min-bandwidth", opts.minimum_bandwidth)
+else:
+    min_bandwidth = search_band / nchannels
+    if opts.verbose:
+        print >>sys.stderr, "Ensuring minimum bandwidth is a power of two for safety."
+    min_bandwidth = 2**int(math.log(min_bandwidth, 2))
+    cfg.set("tf_parameters", "min-bandwidth", min_bandwidth)
+
+if opts.maximum_bandwidth is not None:
+    cfg.set("tf_parameters", "max-bandwidth", opts.maximum_bandwidth)
+else:
+    max_bandwidth = 2**int(math.log(search_band, 2))
+    if opts.verbose:
+        print >>sys.stderr, "Inferring maximum bandwidth from search band (search band: %f -> maximum bandwidth %f)" % (search_band, max_bandwidth)
+    cfg.set("tf_parameters", "max-bandwidth", max_bandwidth)
+
+if opts.maximum_duration:
+    cfg.set("tf_parameters", "max-duration", opts.maximum_duration)
+    if opts.verbose:
+        print "Maximum DOF as determined from DOF and maximum duration is %d" % int(opts.maximum_duration*opts.sampling_rate)
+else:
+    cfg.set("tf_parameters", "max-duration", opts.maximum_dof/float(opts_sample_rate))
+
+cfg.add_section("triggering")
+cfg.set("triggering", "fap-thresh", "%e" % opts.fap_thresh)
+
+if opts.configuration_file is not None:
+    with open(opts.configuration_file, "w") as cfgf:
+        if opts.verbose:
+            print "Writing %s" % opts.configuration_file
+        cfg.write(cfgf)
+else:
+    if opts.verbose:
+        print "Writing to stdout"
+    cfg.write(sys.stdout)
+
+# TODO: Data finding?
+
+if opts.suggest_command_line:
+    program = "gstlal_excesspower"
+    srate_opt = "--sample-rate %s" % int(opts.sampling_rate) if opts.sampling_rate.is_integer else opts.sampling_rate
+    if opts.configuration_file is not None:
+        cfg_opt = "--initialization-file %s" % opts.configuration_file
+    else:
+        cfg_opt = ""
+    print "Suggested command line:" + " ".join([program, srate_opt, cfg_opt])
