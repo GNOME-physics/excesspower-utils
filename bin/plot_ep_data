@@ -1,0 +1,126 @@
+#!/usr/bin/env python
+
+import matplotlib
+matplotlib.use("Agg")
+from matplotlib import pyplot
+
+import numpy
+
+idx0, idx1 = 16384*16, 16384*17
+
+#
+# Plot input data time stream
+#
+
+ts, d = numpy.loadtxt("data.txt", unpack=True)
+ts_0 = ts[0]
+ts -= ts_0
+
+pyplot.figure(1)
+pyplot.plot(ts[idx0:idx1], d[idx0:idx1], 'k-')
+pyplot.grid()
+pyplot.xlabel("time (s), relative to %10.5f" % ts_0)
+pyplot.ylabel("strain")
+pyplot.savefig("input_data.png")
+
+pyplot.figure(0)
+pyplot.subplot(311)
+pyplot.plot(ts[idx0:idx1], d[idx0:idx1], 'k-')
+pyplot.grid()
+#pyplot.xlabel("time (s), relative to %10.5f" % ts_0)
+pyplot.ylabel("strain")
+
+#
+# Plot whitened data time stream
+#
+
+ts, d = numpy.loadtxt("whitened_data.txt", unpack=True)
+ts_0 = ts[0]
+ts -= ts_0
+
+pyplot.figure(1)
+pyplot.clf()
+pyplot.plot(ts[idx0/4:idx1/4], d[idx0/4:idx1/4], 'k-')
+pyplot.grid()
+pyplot.xlabel("time (s), relative to %10.5f" % ts_0)
+pyplot.ylabel("whitened strain")
+pyplot.savefig("white_data.png")
+
+pyplot.figure(0)
+pyplot.subplot(312)
+pyplot.plot(ts[idx0/4:idx1/4], d[idx0/4:idx1/4], 'k-')
+pyplot.grid()
+#pyplot.xlabel("time (s), relative to %10.5f" % ts_0)
+pyplot.ylabel("whitened strain")
+
+#
+# Plot FIR processed data
+#
+
+"""
+ts = numpy.loadtxt("fir_data.txt", unpack=True)
+ts, d = ts[0], ts[1:]
+ts_0 = ts[0]
+ts -= ts_0
+
+pyplot.figure(1)
+pyplot.clf()
+pyplot.imshow(numpy.rot90(d[:,idx0/4:idx1/4]), extent=(ts_0, ts_0 + 1, 16, 2000), interpolation="nearest", aspect='equal')
+
+# Hack to force equal aspect
+ax = pyplot.gca()
+ex = ax.get_images()[0].get_extent()
+ax.set_aspect(abs((ex[1]-ex[0])/(ex[3]-ex[2])))
+
+pyplot.xlabel("time (s), relative to %10.5f" % ts_0)
+pyplot.ylabel("frequency (Hz)")
+pyplot.colorbar()
+pyplot.savefig("fir_data.png")
+"""
+
+#
+# Plot sum of squares data
+#
+
+ts = numpy.loadtxt("sq_data.txt", unpack=True)
+ts, d = ts[0], ts[1:]
+ts -= ts_0
+
+i=0
+ar = [(maxp, ar) for ar, maxp in zip(range(len(d)), numpy.max(d, axis=0))]
+ar.sort()
+maxd = ar[-1][1]
+
+pyplot.figure(1)
+pyplot.clf()
+for i in range(190, 200):
+	pyplot.plot(ts[idx0/1024:idx1/1024], d[i,idx0/1024:idx1/1024], '-')
+pyplot.grid()
+faps = [1e-2, 1e-4, 1e-6, 1e-8]
+from gstlal import excesspower as ep
+for f, t in zip(faps, map(ep.determine_thresh_from_fap, faps)):
+	pyplot.axhline(t**2)
+	pyplot.text(16.8, t**2, "FAP = %1.1e" % f)
+	
+pyplot.xlabel("time (s), relative to %10.5f" % ts_0)
+pyplot.ylabel("subbanded whitened\nstrain (2 DOF)")
+pyplot.savefig("2dof_data.png")
+
+pyplot.figure(0)
+pyplot.subplot(313)
+for i in range(190, 200):
+	pyplot.plot(ts[idx0/1024:idx1/1024], d[i,idx0/1024:idx1/1024], '-')
+#pyplot.plot(ts[idx0/1024:idx1/1024], d[194,idx0/1024:idx1/1024], 'k-')
+for f, t in zip(faps, map(ep.determine_thresh_from_fap, faps)):
+	pyplot.axhline(t**2)
+	pyplot.text(16.8, t**2, "FAP = %1.1e" % f)
+pyplot.grid()
+pyplot.xlabel("time (s), relative to %10.5f" % ts_0)
+pyplot.ylabel("subbanded whitened\nstrain (2 DOF)")
+
+#
+# Save summary plot
+#
+pyplot.figure(0)
+pyplot.subplots_adjust(bottom=0.1)
+pyplot.savefig("summary.png")
