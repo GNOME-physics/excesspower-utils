@@ -4,7 +4,7 @@ STOP=1000001000
 DUR=$(shell python -c "print ${STOP}-${START}")
 
 INJ_CHANNEL_NAME=FAKE-STRAIN
-INJ_XML=mdc.xml.gz
+INJ_XML=test_sg150q9.xml.gz
 INJECTION_FRAME_TYPE=aligo_inject_mdc
 NOISE_FRAME_TYPE=aligo_noise_mdc
 
@@ -15,9 +15,67 @@ LIGO_FRAME_DURATION=64 # s
 LIGO_FRAME_DURATION_COMB=64 # s
 LIGO_N_FRAMES=1
 
+#
+# Injection tables
+#
+zero_lag.xml.gz:
+	ligolw_tisi -i H1=0:0:1 -i L1=0:0:1 -i V1=0:0:1 > zero_lag.xml
+	gzip zero_lag.xml
+
+test_sg150q9.xml.gz: zero_lag.xml.gz
+	../../bin/ligolw_binj  \
+    	--gps-start-time ${START}  \
+    	--gps-end-time ${STOP}  \
+    	--seed 0 \
+    	--event-time-type fixed  \
+    	--event-rate 3e6  \
+    	--burst-family SineGaussian  \
+    	--sg-fix-q 9  \
+    	--sg-fix-f 150  \
+    	--sg-fix-hrss 1e-19  \
+    	--sg-polarization-type circular  \
+    	--output $@
+
+	ligolw_add -v -o $@ $@ $<
+
+astroInjections.xml.gz: zero_lag.xml.gz
+	../../bin/ligolw_binj \
+    	--gps-start-time 0 \
+    	--gps-end-time 6000 \
+    	--output astroInjections.xml.gz \
+    	--seed 1 \
+    	--time-slide-id 0 \
+    	--event-time-type fixed  \
+    	--event-rate 1.05e6  \
+    	--burst-family BTLWNB \
+    	--wnb-min-egw 1e-7 \
+    	--wnb-max-egw 1e-2 \
+    	--wnb-min-bandwidth 50 \
+    	--wnb-max-bandwidth 1500 \
+    	--wnb-min-duration 0.001 \
+    	--wnb-max-duration 0.02 \
+    	--wnb-min-frequency 65 \
+    	--wnb-max-frequency 4000  \
+    	--burst-family SineGaussian \
+    	--sg-polarization-type linear \
+    	--sg-min-q 3 \
+    	--sg-max-q 9 \
+    	--sg-min-f 40 \
+    	--sg-max-f 4000 \
+    	--sg-min-hrss 1e-24 \
+    	--sg-max-hrss 1e-20
+
+	ligolw_add -v -o $@ $@ $<
+
+#
+# Diagnostic plots
+#
 plots: H1_PSD_measured.png L1_PSD_measured.png V1_PSD_measured.png
 	./plot_psds {H,L,V}1_PSD_measured.xml.gz
 
+#
+#  Data generation
+#
 aligo_inject.cache: H1_aligo_inject.cache L1_aligo_inject.cache V1_aligo_inject.cache
 	cat {H,L,V}1_aligo_inject.cache > aligo_inject.cache
 
