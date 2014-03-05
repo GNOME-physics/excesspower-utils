@@ -21,15 +21,15 @@ plots: H1_PSD_measured.png L1_PSD_measured.png V1_PSD_measured.png
 aligo_inject.cache: H1_aligo_inject.cache L1_aligo_inject.cache V1_aligo_inject.cache
 	cat {H,L,V}1_aligo_inject.cache > aligo_inject.cache
 
-H1_aligo_inject.cache:
+H1_aligo_inject.cache: ${INJ_XML}
 	gstlal_fake_frames --gps-start-time ${START} --gps-end-time ${STOP} --injections ${INJ_XML} --channel H1=${INJ_CHANNEL_NAME} --verbose --data-source silence --output-channel ${INJ_CHANNEL_NAME} --frame-type H1_${INJECTION_FRAME_TYPE} --output-path ${INJECTION_DEST} --frame-duration ${LIGO_FRAME_DURATION} --frames-per-file ${LIGO_N_FRAMES}
 	find ${INJECTION_DEST}/ -name "H-*.gwf" | lalapps_path2cache > H1_aligo_inject.cache
 
-L1_aligo_inject.cache:
+L1_aligo_inject.cache: ${INJ_XML}
 	gstlal_fake_frames --gps-start-time ${START} --gps-end-time ${STOP} --injections ${INJ_XML} --channel L1=${INJ_CHANNEL_NAME} --verbose --data-source silence --output-channel ${INJ_CHANNEL_NAME} --frame-type L1_${INJECTION_FRAME_TYPE} --output-path ${INJECTION_DEST} --frame-duration ${LIGO_FRAME_DURATION} --frames-per-file ${LIGO_N_FRAMES}
 	find ${INJECTION_DEST}/ -name "L-*.gwf" | lalapps_path2cache > L1_aligo_inject.cache
 
-V1_aligo_inject.cache:
+V1_aligo_inject.cache: ${INJ_XML}
 	gstlal_fake_frames --gps-start-time ${START} --gps-end-time ${STOP} --injections ${INJ_XML} --channel V1=${INJ_CHANNEL_NAME} --verbose --data-source silence --output-channel ${INJ_CHANNEL_NAME} --frame-type V1_${INJECTION_FRAME_TYPE} --output-path ${INJECTION_DEST} --frame-duration ${LIGO_FRAME_DURATION} --frames-per-file ${LIGO_N_FRAMES}
 	find ${INJECTION_DEST}/ -name "V-*.gwf" | lalapps_path2cache > V1_aligo_inject.cache
 
@@ -73,42 +73,42 @@ H1_PSD_signal_measured.xml.gz: H1_combined.cache
 	gstlal_reference_psd --gps-start-time ${START} --gps-end-time ${STOP} --channel H1=${INJ_CHANNEL_NAME} --verbose --data-source frames --frame-cache H1_combined.cache --write-psd H1_PSD_signal_measured.xml.gz
 
 H1_PSD_signal_measured.png: H1_PSD_signal_measured.xml.gz
-	../utils/plot_psds_single H1 H1_PSD_measured.xml.gz H1_PSD_signal_measured.xml.gz ../HLV-ILIGO_PSD.xml.gz
+	./plot_psds_single H1 H1_PSD_measured.xml.gz H1_PSD_signal_measured.xml.gz
 	mv psd_single.png H1_PSD_signal_measured.png
 
 L1_PSD_signal_measured.xml.gz: L1_combined.cache
 	gstlal_reference_psd --gps-start-time ${START} --gps-end-time ${STOP} --channel L1=${INJ_CHANNEL_NAME} --verbose --data-source frames --frame-cache L1_combined.cache --write-psd L1_PSD_signal_measured.xml.gz
 
 L1_PSD_signal_measured.png: L1_PSD_signal_measured.xml.gz
-	../utils/plot_psds_single L1 L1_PSD_measured.xml.gz L1_PSD_signal_measured.xml.gz ../HLV-ILIGO_PSD.xml.gz
+	./plot_psds_single L1 L1_PSD_measured.xml.gz L1_PSD_signal_measured.xml.gz ../HLV-ILIGO_PSD.xml.gz
 	mv psd_single.png L1_PSD_signal_measured.png
 
 V1_PSD_signal_measured.xml.gz: V1_combined.cache
 	gstlal_reference_psd --gps-start-time ${START} --gps-end-time ${STOP} --channel V1=${INJ_CHANNEL_NAME} --verbose --data-source frames --frame-cache V1_combined.cache --write-psd V1_PSD_signal_measured.xml.gz
 
 V1_PSD_signal_measured.png: V1_PSD_signal_measured.xml.gz
-	../utils/plot_psds_single V1 V1_PSD_measured.xml.gz V1_PSD_signal_measured.xml.gz ../HLV-ILIGO_PSD.xml.gz
+	./plot_psds_single V1 V1_PSD_measured.xml.gz V1_PSD_signal_measured.xml.gz ../HLV-ILIGO_PSD.xml.gz
 	mv psd_single.png V1_PSD_signal_measured.png
 
 H1_PSD_measured.xml.gz: H1_aligo_noise.cache
 	gstlal_reference_psd --gps-start-time ${START} --gps-end-time ${STOP} --channel H1=${INJ_CHANNEL_NAME} --verbose --data-source frames --frame-cache H1_aligo_noise.cache --write-psd H1_PSD_measured.xml.gz
 
 H1_PSD_measured.png: H1_PSD_measured.xml.gz
-	../utils/plot_psds_single H1 H1_PSD_measured.xml.gz ../HLV-ILIGO_PSD.xml.gz
+	./plot_psds_single H1 H1_PSD_measured.xml.gz ../HLV-ILIGO_PSD.xml.gz
 	mv psd_single.png H1_PSD_measured.png
 
 L1_PSD_measured.xml.gz: L1_aligo_noise.cache
 	gstlal_reference_psd --gps-start-time ${START} --gps-end-time ${STOP} --channel L1=${INJ_CHANNEL_NAME} --verbose --data-source frames --frame-cache L1_aligo_noise.cache --write-psd L1_PSD_measured.xml.gz
 
 L1_PSD_measured.png: L1_PSD_measured.xml.gz
-	../utils/plot_psds_single L1 L1_PSD_measured.xml.gz ../HLV-ILIGO_PSD.xml.gz
+	./plot_psds_single L1 L1_PSD_measured.xml.gz ../HLV-ILIGO_PSD.xml.gz
 	mv psd_single.png L1_PSD_measured.png
 
 V1_PSD_measured.xml.gz: V1_aligo_noise.cache
 	gstlal_reference_psd --gps-start-time ${START} --gps-end-time ${STOP} --channel V1=${INJ_CHANNEL_NAME} --verbose --data-source frames --frame-cache V1_aligo_noise.cache --write-psd V1_PSD_measured.xml.gz
 
 V1_PSD_measured.png: V1_PSD_measured.xml.gz
-	../utils/plot_psds_single V1 V1_PSD_measured.xml.gz ../HLV-ILIGO_PSD.xml.gz
+	./plot_psds_single V1 V1_PSD_measured.xml.gz ../HLV-ILIGO_PSD.xml.gz
 	mv psd_single.png V1_PSD_measured.png
 
 clean:
@@ -116,3 +116,5 @@ clean:
 	rm -rf aligo_noise_mdc/
 	rm -rf aligo_inject_mdc/
 	rm -rf aligo_inject_combined/
+	rm -rf *_measured_*.xml.gz
+	rm -rf *.png
