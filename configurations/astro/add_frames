@@ -11,9 +11,9 @@ import lal
 
 
 with open(sys.argv[1]) as cfile:
-    cache1 = Cache.fromfile(cfile)
+    cache1 = sorted(Cache.fromfile(cfile))
 with open(sys.argv[2]) as cfile:
-    cache2 = Cache.fromfile(cfile)
+    cache2 = sorted(Cache.fromfile(cfile))
 
 # FIXME: Data frames will have to be same start and duration
 channel = sys.argv[3] + ":FAKE-STRAIN"
