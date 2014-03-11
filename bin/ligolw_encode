@@ -73,12 +73,12 @@ def sim_insp_defaults(row):
                 fp, fx = inject.XLALComputeDetAMResponse(det.response, row.longitude, row.latitude, row.polarization, float(t))
                 setattr(row, "eff_dist_%s" % d, row.distance/effective_distance_denom(fp, fx, row.inclination))
         except AttributeError:
-                pass
+            pass
         try:
             row.eta = (row.mass1*row.mass2)/(row.mass1+row.mass2)**2
             row.mchirp = row.eta**(3/5.0)*(row.mass1+row.mass2)
         except AttributeError:
-                pass
+            pass
 
 
 TABLE_DEFAULT_FCN = { lsctables.SimInspiralTable: sim_insp_defaults }
