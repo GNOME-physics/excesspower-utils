@@ -4,7 +4,7 @@ STOP=1000001000
 DUR=$(shell python -c "print ${STOP}-${START}")
 
 INJ_CHANNEL_NAME=FAKE-STRAIN
-INJ_XML=test_sg150q9.xml.gz
+INJ_XML=astroInjections.xml.gz
 INJECTION_FRAME_TYPE=aligo_inject_mdc
 NOISE_FRAME_TYPE=aligo_noise_mdc
 
@@ -68,6 +68,16 @@ astroInjections.xml.gz: zero_lag.xml.gz
     	--sg-max-hrss 1e-20
 
 	ligolw_add -v -o $@ $@ $<
+
+fake_search: ${INJ_XML} L1_PSD_measured.xml.gz
+	../../bin/ligolw_inj_snr \
+	    --det-psd-func L1=L1_PSD_measured.xml.gz \
+	    --nyquist-frequency 4096 \
+	    --waveform-length 4 \
+	    --store-sngl sngl_burst \
+	    --calculate-only \
+	    --verbose \
+	    $<
 
 #
 # Diagnostic plots
