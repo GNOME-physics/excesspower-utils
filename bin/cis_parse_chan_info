@@ -10,6 +10,7 @@ from glue import cis
 
 optp = OptionParser()
 optp.add_option("-c", "--channel", action="append", help="Search for this channel(s).")
+optp.add_option("-V", "--valid-fields", action="store_true", help = "Find valid fields for a given channel.")
 optp.add_option("-p", "--parse-response", action = "store_true", help = "Parse JSON response from CIS query through stdin")
 optp.add_option("-C", "--parse-channel-name", action = "append", help = "Parse channel name from response.")
 optp.add_option("-f", "--parse-field", action = "append", help = "Parse field with name from response.")
@@ -18,20 +19,23 @@ optp.add_option("-v", "--verbose", action = "store_true", help = "Be verbose")
 opts, args = optp.parse_args()
 
 if opts.parse_response:
-	resp = json.load(sys.stdin)
-	print resp
-	exit()
+    resp = json.load(sys.stdin)
+    print resp
+    exit()
 
 all_resp = []
 for resp in itertools.chain(*[cis.query(chan) for chan in opts.channel]):
-	if opts.verbose:
-		print "Querying CIS for string %s" % chan
-	if opts.format_output:
-		fmt = "%s " % resp["name"]
-	else:
-		fmt = ""
-	for field in opts.parse_field or []:
-		if not resp.has_key(field):
-			raise AttributeError("Response has no field named %s" % field)
-		print "%s%s"% (fmt, resp[field])
-	all_resp.append(resp)
+    if opts.format_output:
+        fmt = "%s " % resp["name"]
+    else:
+        fmt = ""
+    if opts.valid_fields:
+        print "Valid fields for %s: %s" % (resp["name"], ", ".join(resp.keys()))
+
+    if opts.verbose:
+        print "Querying CIS for string %s" % chan
+    for field in opts.parse_field or []:
+        if not resp.has_key(field):
+            raise AttributeError("Response has no field named %s" % field)
+        print "%s%s"% (fmt, resp[field])
+    all_resp.append(resp)
