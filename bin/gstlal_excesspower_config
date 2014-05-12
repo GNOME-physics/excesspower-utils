@@ -5,14 +5,18 @@ from ConfigParser import ConfigParser
 
 import math
 
+import cis
+
 optp = OptionParser()
 
 # Required in some way
+optp.add_option("-C", "--cis-channel-query", help="Use channel information system to query for relevant information.")
 optp.add_option("-s", "--sampling-rate", type=int, help="Data rate at which to perform the search. Required.")
-optp.add_option("-f", "--minimum-frequency", type=float, help="Minimum frequency to search over. Required.")
-optp.add_option("-F", "--maximum-frequency", type=float, help="Maximum frequency to search over. Default is nyquist frequency.")
 
 # auto configure
+optp.add_option("-N", "--n-freq-channels", type=int, default=1000, help="Number of frequency channels to have. Default is 1000.")
+optp.add_option("-f", "--minimum-frequency", type=float, help="Minimum frequency to search over. Default is just above 0.")
+optp.add_option("-F", "--maximum-frequency", type=float, help="Maximum frequency to search over. Default is near nyquist frequency.")
 optp.add_option("-b", "--minimum-bandwidth", help="Minimum bandwidth to use. Default is to produce 1000 channels from the search bandwidth.")
 optp.add_option("-B", "--maximum-bandwidth", help="Maximum bandwidth to use. Default is to allow resolution levels up to the maximum bandwitdth allowed by the search bandwidth constraints.")
 optp.add_option("-n", "--maximum-dof", type=int, default=128, help="Maximum number of degrees of freedom in powers of two. Default is 128.")
@@ -22,36 +26,59 @@ optp.add_option("-p", "--fap-thresh", type=float, default=1e7, help="False alarm
 # output options
 optp.add_option("-o", "--configuration-file", help="Name of confguration file to write. Default is stdout")
 
+# datafinding option
+#optp.add_option("--gps-start-time", type=int, help="Start time of data stretch")
+#optp.add_option("--gps-end-time", type=int, help="End time of data stretch")
+#optp.add_option("--frame-type", type=int, help="Type of frame to query for")
+
 # Helpful options
 optp.add_option("-S", "--suggest-command-line", action="store_true", help="Suggest the command line to use for this particular configuration. Default is no.")
 optp.add_option("-v", "--verbose", action="store_true", help="Be verbose.")
 
 opts, args = optp.parse_args()
 
-if opts.minimum_frequency is None:
-    sys.exit("Required option --min-frequency is not present.")
-if opts.sampling_rate is None:
-    sys.exit("Required option --sampling-rate not present.")
-
-search_band = (opts.maximum_frequency or opts.sampling_rate/2) - opts.minimum_frequency
-max_frequency = opts.maximum_frequency or opts.sampling_rate/2
-assert max_frequency > opts.minimum_frequency
-
 cfg = ConfigParser()
 cfg.add_section("tf_parameters")
-cfg.set("tf_parameters", "min-frequency", opts.minimum_frequency)
-cfg.set("tf_parameters", "max-frequency", opts.maximum_frequency or opts.sampling_rate/2)
 
-search_band = max_frequency - opts.minimum_frequency
-nchannels = 1000
+#
+# If requested, try querying CIS first
+#
+if opts.cis_channel_query:
+    q = cis.Channel.query(name=opts.cis_channel_query)
+    opts.sampling_rate = q.sample_rate
+
+if opts.sampling_rate is None:
+    sys.exit("Required option --sampling-rate not present, or CIS query required.")
+
+max_frequency = opts.maximum_frequency or opts.sampling_rate / 2
+minimum_frequency = opts.minimum_frequency or 0
+search_band = max_frequency - minimum_frequency
+
+nchannels = opts.n_freq_channels or 1000
 if opts.minimum_bandwidth is not None:
+    min_bandwidth = float(opts.minimum_bandwidth)
     cfg.set("tf_parameters", "min-bandwidth", opts.minimum_bandwidth)
 else:
     min_bandwidth = search_band / nchannels
     if opts.verbose:
         print >>sys.stderr, "Ensuring minimum bandwidth is a power of two for safety."
     min_bandwidth = 2**int(math.log(min_bandwidth, 2))
-    cfg.set("tf_parameters", "min-bandwidth", min_bandwidth)
+
+# Reset minimum frequency away from zero
+if minimum_frequency == 0:
+    minimum_frequency += float(min_bandwidth) * 3/2.0
+assert max_frequency > minimum_frequency
+
+# Readjust away from nyquist
+if opts.maximum_frequency is None:
+    max_frequency -= min_bandwidth * 3/2.0
+
+# Recalculate search_band
+search_band = max_frequency - minimum_frequency
+
+cfg.set("tf_parameters", "min-bandwidth", min_bandwidth)
+cfg.set("tf_parameters", "min-frequency", minimum_frequency)
+cfg.set("tf_parameters", "max-frequency", max_frequency)
 
 if opts.maximum_bandwidth is not None:
     cfg.set("tf_parameters", "max-bandwidth", opts.maximum_bandwidth)
@@ -66,7 +93,8 @@ if opts.maximum_duration:
     if opts.verbose:
         print "Maximum DOF as determined from DOF and maximum duration is %d" % int(opts.maximum_duration*opts.sampling_rate)
 else:
-    cfg.set("tf_parameters", "max-duration", opts.maximum_dof/float(opts.sampling_rate))
+    #cfg.set("tf_parameters", "max-duration", opts.maximum_dof/float(opts.sampling_rate))
+    cfg.set("tf_parameters", "max-duration", 1.0/min_bandwidth)
 
 cfg.add_section("triggering")
 cfg.set("triggering", "fap-thresh", "%e" % opts.fap_thresh)
