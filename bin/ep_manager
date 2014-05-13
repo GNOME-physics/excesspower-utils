@@ -1,0 +1,177 @@
+#!/usr/bin/env python
+import sys
+from Queue import PriorityQueue
+from ConfigParser import ConfigParser
+
+from optparse import OptionParser
+
+import condor_manager
+from condor_manager import EPOnlineCondorJob
+
+#
+# Util functions
+#
+def load_subsystem_configuration(cfgp, channels=None):
+    pqueue, chan_list = PriorityQueue(), []
+    for sec in cfgp.sections():
+        if channels is not None and sec not in channels:
+            continue
+        manager = EPOnlineCondorJob.from_config_section(cfgp, sec, rootdir)
+        prio = 1.0/cfgp.getfloat(sec, "priority") if cfgp.has_option(sec, "priority") else 1.0
+        pqueue.put((prio, manager))
+        chan_list.append(manager)
+    return pqueue, chan_list
+
+#
+# Command functions
+#
+def print_help_str(cmd, help_dict):
+    if help_dict.has_key(cmd):
+        print "Help for %s" % cmd
+        print help_dict[cmd]
+    else:
+        print "Don't recognize %s, known commands: %s" % (cmd, help_dict.keys())
+
+def print_status(channels):
+    for chan, stat in zip(channels, [c.status() for c in channels]):
+        hdr = chan.full_name()
+        hdr += "\n" + "-"*len(hdr)
+        print hdr
+        for k, v in stat.iteritems():
+            print "\t%s: %s" % (k, str(v or ""))
+        print ""
+
+help_dict = {
+    "status": """Query the status of a set of channels. Without the --channel argument, query all known channels.""",
+    "help": """META"""
+}
+
+help_banner = """Usage: ep_manager [cmd] [options]
+
+Implemented commands: %s
+
+Type ep_manager help [command] to get specific help.
+""" % ", ".join(help_dict.keys())
+
+optp = OptionParser(usage=help_banner)
+optp.add_option("-c", "--channel", action="append", help="Add this channel to the list for a given command action, if applicable.")
+optp.add_option("-e", "--entry", action="append", help="Get this entry of the configuration. Only valid for [set] and [status]")
+optp.add_option("-n", "--dry-run", action="store_true", help="Do not actually commit changes.")
+opts, arg = optp.parse_args()
+
+if len(arg) == 0:
+    print help_banner
+    exit()
+
+subs_cfg_file = "sus_channels.ini"
+
+cfgp = ConfigParser()
+cfgp.read(subs_cfg_file)
+
+rootdir = "./"
+
+pqueue, chan_list = load_subsystem_configuration(cfgp)
+
+if opts.channel is None:
+    channels = chan_list
+else:
+    # FIXME: Warn if not present
+    channels = filter(lambda c: c.full_name() in opts.channel, chan_list)
+
+cmd = arg[0]
+if cmd is None or cmd == "help":
+    print_help_str(arg[1], help_dict)
+    exit()
+elif cmd == "status":
+    print_status(channels)
+
+elif cmd == "condor_status":
+    for chan, stat in zip(channels, [c.condor_status() for c in channels]):
+        hdr = chan.full_name()
+        hdr += "\n" + "-"*len(hdr)
+        print hdr
+        for k, v in stat.iteritems():
+            print "\t%s: %s" % (k, str(v or ""))
+        print ""
+
+elif cmd == "condor_config":
+    for chan in channels:
+        chan.write_config_file(sys.stdout)
+
+elif cmd == "copy_channel":
+    if len(channels) != 1:
+        exit("Specify only one channel to copy")
+    copy_chan, dest = channels[0].full_name(), arg[1]
+    print "Copying %s -> %s" % (copy_chan, dest)
+
+    pqueue, chan_list = load_subsystem_configuration(cfgp, channels=channels)
+    new_mngr = EPOnlineCondorJob.from_config_section(cfgp, copy_chan, rootdir)
+
+    new_mngr.instrument, new_mngr.channel = dest.split(":")
+    cfgp.add_section(dest)
+    for attr in cfgp.options(copy_chan):
+        cfgp.set(dest, attr, cfgp.get(copy_chan, attr))
+    chan_list.append(new_mngr)
+    # FIXME add it to queue?
+    condor_manager.write_subsystem_config(chan_list, "H1/sus_channels.ini")
+
+elif cmd == "delete_channel":
+    pqueue, chan_list = load_subsystem_configuration(cfgp, channels=channels)
+    init_len = len(chan_list)
+    chan_list = filter(lambda c: c.full_name() not in opts.channel, chan_list)
+    diff = init_len - len(chan_list)
+    print "Removed %d channels" % diff
+    if diff > 0:
+        condor_manager.write_subsystem_config(chan_list, "H1/sus_channels.ini")
+
+elif cmd == "set":
+    for chan in channels:
+        for entry in opts.entry:
+            name, val = entry.split("=")
+            if not hasattr(chan, name):
+                print "Manager for channel %s does not have entry %s, skipping" % (chan.channel, name)
+                continue
+            chan.set_config_attr(name, val)
+            print "Set %s to %s for channel %s" % (name, getattr(chan, name), chan.channel)
+    chan.write_config_file(sys.stdout)
+    condor_manager.write_subsystem_config(chan_list, "H1/sus_channels.ini")
+
+elif cmd == "write_sub_config":
+    condor_manager.write_subsystem_config(chan_list, "H1/sus_channels.ini")
+
+elif cmd == "start":
+    while not pqueue.empty():
+        prio, manager = pqueue.get_nowait()
+        if manager.full_name() not in opts.channel:
+            continue
+        print "Got channel %s, with priority %f" % (manager.channel, 1.0/prio)
+        if opts.dry_run:
+            print "Okay, just kidding."
+            continue
+        manager.finalize()
+        ret, pid = condor_manager.submit_condor_job(manager)
+        if ret != 0:
+            exit("OHNOES!")
+        else:
+            print "Submitted condor job with condor PID %d" % pid
+        break
+    condor_manager.write_subsystem_config(chan_list, "H1/sus_channels.ini")
+
+elif cmd == "kill":
+    cfgp = ConfigParser()
+    cfgp.read("H1/sus_channels.ini")
+    pqueue, chan_list = load_subsystem_configuration(cfgp)
+    while not pqueue.empty():
+        prio, manager = pqueue.get_nowait()
+        if manager.full_name() not in opts.channel:
+            continue
+        print "Killing channel %s, with priority %f" % (manager.channel, 1.0/prio)
+        if opts.dry_run:
+            print "Okay, just kidding."
+            continue
+        ret = condor_manager.kill_condor_job(manager)
+        if ret != 0:
+            exit("OHNOES!")
+        else:
+            print "Killed condor job for channel %s" % manager.channel
+        break
