@@ -42,8 +42,8 @@ test_sg150q9.xml.gz: zero_lag.xml.gz
 
 astroInjections.xml.gz: zero_lag.xml.gz
 	../../bin/ligolw_binj \
-    	--gps-start-time 0 \
-    	--gps-end-time 6000 \
+    	--gps-start-time ${START}  \
+    	--gps-end-time ${STOP}  \
     	--output astroInjections.xml.gz \
     	--seed 1 \
     	--time-slide-id 0 \
