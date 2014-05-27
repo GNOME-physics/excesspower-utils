@@ -5,12 +5,22 @@ from ConfigParser import ConfigParser
 
 from optparse import OptionParser
 
+import git
+
 import condor_manager
 from condor_manager import EPOnlineCondorJob
 
 #
 # Util functions
 #
+
+def is_already_repo(rdir):
+    try:
+        git.Repo(rootdir)
+    except git.InvalidGitRepositoryError:
+        return False
+    return True
+
 def load_subsystem_configuration(cfgp, channels=None):
     pqueue, chan_list = PriorityQueue(), []
     for sec in cfgp.sections():
@@ -57,26 +67,39 @@ optp = OptionParser(usage=help_banner)
 optp.add_option("-c", "--channel", action="append", help="Add this channel to the list for a given command action, if applicable.")
 optp.add_option("-e", "--entry", action="append", help="Get this entry of the configuration. Only valid for [set] and [status]")
 optp.add_option("-n", "--dry-run", action="store_true", help="Do not actually commit changes.")
+optp.add_option("-r", "--root-directory", help="Use this as the root directory for the processes.")
+optp.add_option("-s", "--subsystem-config-file", action="append", help="Use this config file (e.g. override current settings) for a given set of channels. Can be given multiple times.")
 opts, arg = optp.parse_args()
 
 if len(arg) == 0:
     print help_banner
     exit()
 
-subs_cfg_file = "sus_channels.ini"
+rootdir = "./" or opts.root_directory
 
-cfgp = ConfigParser()
-cfgp.read(subs_cfg_file)
+chan_list, pqueue = [], PriorityQueue()
 
-rootdir = "./"
+chan_repo = None
+if is_already_repo(rootdir):
+    chan_repo = git.Repo(rootdir)
+    import glob
+    print glob.glob(chan_repo.working_dir + "/*/*.ini")
+    #for cfgf in glob.glob(chan_repo.working_dir + "/*.ini"):
+    for cfgf in glob.glob(chan_repo.working_dir + "/*/*.ini"):
+        cfgp = ConfigParser()
+        cfgp.read(cfgf)
+        pq, cl = load_subsystem_configuration(cfgp)
+        while not pq.empty():
+            pqueue.put(pq.get_nowait())
+        chan_list.extend(cl)
 
-pqueue, chan_list = load_subsystem_configuration(cfgp)
-
-if opts.channel is None:
-    channels = chan_list
-else:
-    # FIXME: Warn if not present
-    channels = filter(lambda c: c.full_name() in opts.channel, chan_list)
+    if opts.channel is None:
+        channels = chan_list
+    else:
+        # FIXME: Warn if not present
+        channels = filter(lambda c: c.full_name() in opts.channel, chan_list)
+        if len(channels) != len(opts.channel):
+            print >>sys.stderr, "Warning, could not find channels in config: %s" % ", ".join(list(set(opts.channel)-set(channels)))
 
 cmd = arg[0]
 if cmd is None or cmd == "help":
@@ -84,6 +107,31 @@ if cmd is None or cmd == "help":
     exit()
 elif cmd == "status":
     print_status(channels)
+
+elif cmd == "chan_init":
+
+    if chan_repo is not None:
+        exit("Can't initialize new channel monitor, a git repo already exists in path %s" % rootdir)
+
+    pqueue, chan_list = PriorityQueue(), []
+    if not opts.subsystem_config_file:
+        sys.exit("Please provide input config files via the -s option")
+    for init_file in opts.subsystem_config_file:
+        cfgp = ConfigParser()
+        cfgp.read(init_file)
+        pq, cl = load_subsystem_configuration(cfgp)
+        while not pq.empty():
+            pqueue.put(pq.get_nowait())
+        chan_list += cl
+
+    cfgs = condor_manager.write_all_configs(chan_list)
+
+    chan_repo = git.Repo.init(rootdir, mkdir=True)
+    print "Channel monitors initialized at %s" % rootdir
+    cfgs = [c.replace(rootdir, "") for c in cfgs]
+    print cfgs
+    chan_repo.index.add(cfgs)
+    chan_repo.index.commit("Initialized repo, added subsystem configs.")
 
 elif cmd == "condor_status":
     for chan, stat in zip(channels, [c.condor_status() for c in channels]):
@@ -104,25 +152,36 @@ elif cmd == "copy_channel":
     copy_chan, dest = channels[0].full_name(), arg[1]
     print "Copying %s -> %s" % (copy_chan, dest)
 
-    pqueue, chan_list = load_subsystem_configuration(cfgp, channels=channels)
-    new_mngr = EPOnlineCondorJob.from_config_section(cfgp, copy_chan, rootdir)
+    for cfgf in glob.glob(chan_repo.working_dir + "/*.ini"):
+        cfgp = ConfigParser()
+        cfgp.read(cfgf)
+        pq, tmp = load_subsystem_configuration(cfgp, channels=[copy_chan])
+        if copy_chan in [c.full_name() for c in tmp]:
+            new_mngr = EPOnlineCondorJob.from_config_section(cfgp, copy_chan, rootdir)
 
-    new_mngr.instrument, new_mngr.channel = dest.split(":")
-    cfgp.add_section(dest)
-    for attr in cfgp.options(copy_chan):
-        cfgp.set(dest, attr, cfgp.get(copy_chan, attr))
-    chan_list.append(new_mngr)
-    # FIXME add it to queue?
-    condor_manager.write_subsystem_config(chan_list, "H1/sus_channels.ini")
+            new_mngr.instrument, new_mngr.channel = dest.split(":")
+            cfgp.add_section(dest)
+            for attr in cfgp.options(copy_chan):
+                cfgp.set(dest, attr, cfgp.get(copy_chan, attr))
+            chan_list.append(new_mngr)
+            break
+            # FIXME add it to queue?
+
+    cfgs = condor_manager.write_all_configs(chan_list)
+    cfgs = [c.replace(rootdir, "") for c in cfgs]
+    chan_repo.index.add(cfgs)
+    chan_repo.index.commit("Added channel %s to configuration." % dest)
 
 elif cmd == "delete_channel":
-    pqueue, chan_list = load_subsystem_configuration(cfgp, channels=channels)
     init_len = len(chan_list)
     chan_list = filter(lambda c: c.full_name() not in opts.channel, chan_list)
     diff = init_len - len(chan_list)
-    print "Removed %d channels" % diff
     if diff > 0:
-        condor_manager.write_subsystem_config(chan_list, "H1/sus_channels.ini")
+        cfgs = condor_manager.write_all_configs(chan_list)
+        cfgs = [c.replace(rootdir, "") for c in cfgs]
+        chan_repo.index.add(cfgs)
+        chan_repo.index.commit("Removed channels %s from configuration." % ", ".join(opts.channel))
+    print "Removed %d channels" % diff
 
 elif cmd == "set":
     for chan in channels:
@@ -133,11 +192,12 @@ elif cmd == "set":
                 continue
             chan.set_config_attr(name, val)
             print "Set %s to %s for channel %s" % (name, getattr(chan, name), chan.channel)
-    chan.write_config_file(sys.stdout)
-    condor_manager.write_subsystem_config(chan_list, "H1/sus_channels.ini")
+            chan.write_config_file(sys.stdout)
 
-elif cmd == "write_sub_config":
-    condor_manager.write_subsystem_config(chan_list, "H1/sus_channels.ini")
+    cfgs = condor_manager.write_all_configs(chan_list, append=True)
+    #cfgs = [c.replace(rootdir, "") for c in cfgs]
+    #chan_repo.index.add(cfgs)
+    #chan_repo.index.commit("Set %s for channels %s" % ("/".join(opts.entry), ", ".join(channels))
 
 elif cmd == "start":
     while not pqueue.empty():
