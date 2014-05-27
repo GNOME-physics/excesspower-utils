@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 import sys
+import os
 from Queue import PriorityQueue
 from ConfigParser import ConfigParser
 
@@ -124,7 +125,7 @@ elif cmd == "chan_init":
             pqueue.put(pq.get_nowait())
         chan_list += cl
 
-    cfgs = condor_manager.write_all_configs(chan_list)
+    cfgs = condor_manager.write_all_configs(chan_list, append=False)
 
     chan_repo = git.Repo.init(rootdir, mkdir=True)
     print "Channel monitors initialized at %s" % rootdir
@@ -195,14 +196,14 @@ elif cmd == "set":
             chan.write_config_file(sys.stdout)
 
     cfgs = condor_manager.write_all_configs(chan_list, append=True)
-    #cfgs = [c.replace(rootdir, "") for c in cfgs]
-    #chan_repo.index.add(cfgs)
-    #chan_repo.index.commit("Set %s for channels %s" % ("/".join(opts.entry), ", ".join(channels))
+    cfgs = [c.replace(rootdir, "") for c in cfgs]
+    chan_repo.index.add(cfgs)
+    chan_repo.index.commit("Set %s for channels %s" % ("/".join(opts.entry), ", ".join([c.full_name() for c in channels])))
 
 elif cmd == "start":
     while not pqueue.empty():
         prio, manager = pqueue.get_nowait()
-        if manager.full_name() not in opts.channel:
+        if opts.channel and manager.full_name() not in opts.channel:
             continue
         print "Got channel %s, with priority %f" % (manager.channel, 1.0/prio)
         if opts.dry_run:
@@ -214,16 +215,23 @@ elif cmd == "start":
             exit("OHNOES!")
         else:
             print "Submitted condor job with condor PID %d" % pid
-        break
-    condor_manager.write_subsystem_config(chan_list, "H1/sus_channels.ini")
+
+        chan_repo.index.add(map(os.path.relpath, [manager.configuration_file, manager.get_sub_file()]))
+        chan_repo.index.commit("Added condor/configuration files for channels %s" % manager.full_name())
+
+    cfgs = condor_manager.write_all_configs(chan_list, append=True)
+    cfgs = [c.replace(rootdir, "") for c in cfgs]
+    chan_repo.index.add(cfgs)
+    if channels:
+        msg = "Changed configurations (reason: condor running) for channels:\n\t%s" % ("\n\t ".join([c.full_name() for c in channels]))
+    else:
+        msg = "Changed configurations (reason: condor running) for all channels"
+    chan_repo.index.commit(msg)
 
 elif cmd == "kill":
-    cfgp = ConfigParser()
-    cfgp.read("H1/sus_channels.ini")
-    pqueue, chan_list = load_subsystem_configuration(cfgp)
     while not pqueue.empty():
         prio, manager = pqueue.get_nowait()
-        if manager.full_name() not in opts.channel:
+        if opts.channel and manager.full_name() not in opts.channel:
             continue
         print "Killing channel %s, with priority %f" % (manager.channel, 1.0/prio)
         if opts.dry_run:
@@ -234,4 +242,3 @@ elif cmd == "kill":
             exit("OHNOES!")
         else:
             print "Killed condor job for channel %s" % manager.channel
-        break
