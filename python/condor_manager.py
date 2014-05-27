@@ -34,9 +34,15 @@ class EPOnlineCondorJob(CondorJob, object):
         if cfgp.has_option(sec, "dq_channel"):
             odc_chan = cfgp.get(sec, "dq_channel")
         if cfgp.has_option(sec, "on_bits"):
-            on_bits = int(cfgp.get(sec, "on_bits"), 16)
+            if cfgp.get(sec, "on_bits"):
+                on_bits = int(cfgp.get(sec, "on_bits"), 16)
+            else:
+                on_bits = None
         if cfgp.has_option(sec, "off_bits"):
-            off_bits = int(cfgp.get(sec, "off_bits"), 16)
+            if cfgp.get(sec, "off_bits"):
+                off_bits = int(cfgp.get(sec, "off_bits"), 16)
+            else:
+                off_bits = None
         manager.set_dq_channel(odc_chan, on_bits, off_bits)
         return manager
 
@@ -169,8 +175,10 @@ class EPOnlineCondorJob(CondorJob, object):
         self.dq_channel = dq_channel
         self.on_bits, self.off_bits = on_bits, off_bits
         self.add_opt("dq-channel", "%s=%s" % (self.instrument, self.dq_channel))
-        self.add_opt("state-vector-on-bits", "%x" % self.on_bits)
-        self.add_opt("state-vector-off-bits", "%x" % self.off_bits)
+        if self.on_bits is not None:
+            self.add_opt("state-vector-on-bits", "%x" % self.on_bits)
+        if self.off_bits is not None:
+            self.add_opt("state-vector-off-bits", "%x" % self.off_bits)
 
     def set_shm_partition(self, shm_part_name):
         """
@@ -245,14 +253,36 @@ class EPOnlineCondorJob(CondorJob, object):
         self.set_sub_file(self.sub_file)
         self.write_sub_file()
 
-def write_subsystem_config(managers, path):
+def write_all_configs(managers, working_dir="./", append=True):
+    # FIXME: Do this sorted by channel name to minimize diffs
+    import itertools
+    def categorize(mngr):
+        return (mngr.instrument, mngr.subsys)
+
+    written_configs = []
+    for (inst, subsys), mlist in itertools.groupby(sorted(managers, key=EPOnlineCondorJob.full_name), categorize):
+        inst_dir = os.path.join(working_dir, inst)
+        if not os.path.exists(inst_dir):
+            os.makedirs(inst_dir)
+        cfg_fname = os.path.join(inst_dir, "%s_channels.ini" % subsys.lower())
+        write_subsystem_config(mlist, cfg_fname, append)
+        written_configs.append(cfg_fname)
+
+    return written_configs
+            
+
+def write_subsystem_config(managers, path, append=True):
     cfgp = ConfigParser()
+    if append:
+        with open(path, "r") as cfgf:
+            cfgp.read(cfgf)
     for mngr in managers:
         sec = mngr.full_name()
         cfgp.add_section(sec)
         #for a in ["instrument", "sample_rate", "configuration_file", "dq_channel", "on_bits", "off_bits", "priority"]:
         for a in ["instrument", "sample_rate", "configuration_file", "dq_channel", "on_bits", "off_bits"]:
-            cfgp.set(sec, a, getattr(mngr, a))
+            val = getattr(mngr, a)
+            cfgp.set(sec, a, "" if val is None else val)
 
     if hasattr(path, "write"):
         cfgp.write(path)
