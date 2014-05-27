@@ -1,7 +1,10 @@
 import sys
 import os
+import itertools
 from collections import OrderedDict
-
+import subprocess
+import shlex
+from xml.etree import ElementTree
 from ConfigParser import ConfigParser
 
 from glue.pipeline import CondorJob
@@ -64,8 +67,8 @@ class EPOnlineCondorJob(CondorJob, object):
 
         # Online running requires us to identify the resource which
         # won't evict us 
-        #for incant, val in ONLINE_INCANTATION.iteritems():
-            #self.add_condor_cmd(incant, val)
+        for incant, val in ONLINE_INCANTATION.iteritems():
+            self.add_condor_cmd(incant, val)
 
         # Since gstreamer doesn't always tell us what's wrong, we'll
         # enable basic error reporting
@@ -254,8 +257,6 @@ class EPOnlineCondorJob(CondorJob, object):
         self.write_sub_file()
 
 def write_all_configs(managers, working_dir="./", append=True):
-    # FIXME: Do this sorted by channel name to minimize diffs
-    import itertools
     def categorize(mngr):
         return (mngr.instrument, mngr.subsys)
 
@@ -329,9 +330,6 @@ def kill_condor_job(job, pid=None):
 
     return proc.returncode
 
-import subprocess
-import shlex
-from xml.etree import ElementTree
 def parse_condor_xml_node(node):
     job_stat = {}
     for attr in node:
