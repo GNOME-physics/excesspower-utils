@@ -6,7 +6,7 @@ frame_cache=something.cache
 start=1076669952
 end=1076670952
 
-gstlal_excesspower \
+gstlal_reference_psd \
     --data-source frames \
     --channel-name L1=${channel_name} \
     --sample-rate ${sample_rate} \
