@@ -3,6 +3,21 @@
 ./ligolw_binj \
     --gps-start-time 0 \
     --gps-end-time 1000 \
+    --output impulse_test.xml \
+    --seed 1 \
+    --time-slide-id 0 \
+    --event-time-type fixed  \
+    --event-rate 1e6  \
+    --burst-family Impulse \
+    --imp-fix-hrss 2e-24 \
+    --imp-fix-hrss 1e-25 \
+    --imp-fix-hrss 5e-23 \
+    --imp-fix-hrss 1e-23
+exit
+
+./ligolw_binj \
+    --gps-start-time 0 \
+    --gps-end-time 1000 \
     --output mixed_test.xml \
     --seed 1 \
     --time-slide-id 0 \
