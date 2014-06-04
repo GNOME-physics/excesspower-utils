@@ -2,6 +2,8 @@ START=1000000000
 #STOP=1000086400
 STOP=1000001000
 DUR=$(shell python -c "print ${STOP}-${START}")
+INJ_OFFSET=10
+SG_START=$(shell python -c "print ${START}+${INJ_OFFSET}")
 
 INJ_CHANNEL_NAME=FAKE-STRAIN
 INJ_XML=astroInjections.xml.gz
@@ -40,11 +42,11 @@ test_sg150q9.xml.gz: zero_lag.xml.gz
 
 	ligolw_add -v -o $@ $@ $<
 
-astroInjections.xml.gz: zero_lag.xml.gz
+astroInjections_btlwnb.xml.gz:
 	../../bin/ligolw_binj \
     	--gps-start-time ${START}  \
     	--gps-end-time ${STOP}  \
-    	--output astroInjections.xml.gz \
+    	--output $@ \
     	--seed 1 \
     	--time-slide-id 0 \
     	--event-time-type fixed  \
@@ -57,7 +59,17 @@ astroInjections.xml.gz: zero_lag.xml.gz
     	--wnb-min-duration 0.001 \
     	--wnb-max-duration 0.02 \
     	--wnb-min-frequency 65 \
-    	--wnb-max-frequency 4000  \
+    	--wnb-max-frequency 4000 
+
+astroInjections_sg.xml.gz:
+	../../bin/ligolw_binj \
+    	--gps-start-time ${SG_START}  \
+    	--gps-end-time ${STOP}  \
+    	--output $@ \
+    	--seed 1 \
+    	--time-slide-id 0 \
+    	--event-time-type fixed  \
+    	--event-rate 1.05e6  \
     	--burst-family SineGaussian \
     	--sg-polarization-type linear \
     	--sg-min-q 3 \
@@ -67,7 +79,9 @@ astroInjections.xml.gz: zero_lag.xml.gz
     	--sg-min-hrss 1e-24 \
     	--sg-max-hrss 1e-20
 
-	ligolw_add -v -o $@ $@ $<
+astroInjections.xml.gz: zero_lag.xml.gz astroInjections_sg.xml.gz astroInjections_btlwnb.xml.gz
+	ligolw_add -v -o $@ astroInjections_sg.xml.gz astroInjections_btlwnb.xml.gz $<
+	rm astroInjections_sg.xml.gz astroInjections_btlwnb.xml.gz
 
 fake_search: ${INJ_XML} L1_PSD_measured.xml.gz
 	../../bin/ligolw_inj_snr \
