@@ -9,7 +9,7 @@ hrss=e+10
 all: injections excesspower addTriggers plot
 
 injections: 
-	/home/sydc/excesspower-utils/bin/ligolw_binj \
+	../../bin/ligolw_binj \
 	--gps-start-time 9900 \
 	--gps-end-time 10000 \
 	--burst-family SineGaussian \
@@ -25,7 +25,7 @@ injections:
 
 excesspower:
 	mkdir psd
-	/home/sydc/gstlocal/bin/gstlal_excesspower --gps-start-time ${gps_start} --gps-end-time ${gps_end} --data-source white --sample-rate 4096 -v --channel-name ${instrument}=${channel} -f ${ini_file} --injections fixed_sg.xml.gz
+	../../bin/gstlal_excesspower --gps-start-time ${gps_start} --gps-end-time ${gps_end} --data-source white --sample-rate 4096 -v --channel-name ${instrument}=${channel} -f ${ini_file} --injections fixed_sg.xml.gz
 
 addTriggers:
 	find L1/FAKE/STRAIN/ -name '*.xml.gz' | lalapps_path2cache -a > L1-FAKE_STRAIN_excesspower.cache
