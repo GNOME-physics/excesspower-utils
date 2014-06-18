@@ -33,5 +33,5 @@ addTriggers:
 clean:
 	rm -f *.cache
 	rm -rf L1
-	rm -f psd/*
+	rm -rf psd
 	rm -f *.xml.gz
