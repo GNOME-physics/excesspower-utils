@@ -42,6 +42,14 @@ test_sg150q9.xml.gz: zero_lag.xml.gz
 
 	ligolw_add -v -o $@ $@ $<
 
+astroInjections_rescaled.xml.gz: astroInjections.xml.gz
+	../../bin/ligolw_inj_snr  \
+		--det-psd-func H1=SimNoisePSDaLIGOZeroDetHighPower  \
+		--rescale-snr-normal-stddev 2  \
+		--rescale-snr-normal-mean 8  \
+		 $<
+	mv snr_rescaled.xml.gz $@
+
 astroInjections_btlwnb.xml.gz:
 	../../bin/ligolw_binj \
     	--gps-start-time ${START}  \
