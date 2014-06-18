@@ -8,7 +8,11 @@ hrss=e+10
 
 all: injections excesspower addTriggers plot
 
-injections: 
+zero_lag.xml.gz:
+	ligolw_tisi -i H1=0:0:1 -i L1=0:0:1 -i V1=0:0:1 > zero_lag.xml
+	gzip zero_lag.xml
+
+fixed_sg.xml.gz: zero_lag.xml.gz
 	../../bin/ligolw_binj \
 	--gps-start-time 9900 \
 	--gps-end-time 10000 \
@@ -22,10 +26,11 @@ injections:
 	--sg-fix-hrss 1.104${hrss} \
 	--sg-fix-q 9.8 \
 	--sg-fix-f 100
+	ligolw_add -o $@ $@ $<
 
-excesspower:
+excesspower: fixed_sg.xml.gz
 	mkdir psd
-	../../bin/gstlal_excesspower --gps-start-time ${gps_start} --gps-end-time ${gps_end} --data-source white --sample-rate 4096 -v --channel-name ${instrument}=${channel} -f ${ini_file} --injections fixed_sg.xml.gz
+	gstlal_excesspower --gps-start-time ${gps_start} --gps-end-time ${gps_end} --data-source white --sample-rate 4096 -v --channel-name ${instrument}=${channel} -f ${ini_file} --injections $<
 
 addTriggers:
 	find L1/FAKE/STRAIN/ -name '*.xml.gz' | lalapps_path2cache -a > L1-FAKE_STRAIN_excesspower.cache
