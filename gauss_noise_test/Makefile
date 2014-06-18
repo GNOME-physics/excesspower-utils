@@ -23,6 +23,7 @@ injections:
 	--sg-fix-f 100
 
 excesspower:
+	mkdir psd
 	/home/sydc/gstlocal/bin/gstlal_excesspower --gps-start-time ${gps_start} --gps-end-time ${gps_end} --data-source white --sample-rate 4096 -v --channel-name ${instrument}=${channel} -f ${ini_file} --injections fixed_sg.xml.gz
 
 addTriggers:
