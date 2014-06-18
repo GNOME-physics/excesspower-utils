@@ -1,11 +1,12 @@
-gps_start=9000
-gps_end=11000
+gps_start=8000
+gps_end=12000
 blocksize=131072
 instrument=L1
 channel=FAKE-STRAIN
 ini_file=gstlal_excesspower.ini
+hrss=e+10
 
-all: injections excesspower addTriggers 
+all: injections excesspower addTriggers plot
 
 injections: 
 	/home/sydc/excesspower-utils/bin/ligolw_binj \
@@ -18,7 +19,7 @@ injections:
 	--event-time-type fixed \
 	--event-rate 1 \
 	--sg-polarization-type linear \
-	--sg-fix-hrss 1.104e2 \
+	--sg-fix-hrss 1.104${hrss} \
 	--sg-fix-q 9.8 \
 	--sg-fix-f 100
 
@@ -29,6 +30,9 @@ excesspower:
 addTriggers:
 	find L1/FAKE/STRAIN/ -name '*.xml.gz' | lalapps_path2cache -a > L1-FAKE_STRAIN_excesspower.cache
 	ligolw_add -i L1-FAKE_STRAIN_excesspower.cache -v -o L1-FAKE_STRAIN_excesspower.xml.gz
+
+plot:
+	gstlal_excesspower_trigvis L1-FAKE_STRAIN_excesspower.xml.gz -j fixed_sg.xml.gz -O 0.3 -o ~/public_html/fixedSnr/fixed_sg_${hrss} -s 8000 -e 12000
 
 clean:
 	rm -f *.cache
