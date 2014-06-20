@@ -88,7 +88,7 @@ astroInjections_sg.xml.gz:
     	--sg-max-hrss 1e-20
 
 astroInjections.xml.gz: zero_lag.xml.gz astroInjections_sg.xml.gz astroInjections_btlwnb.xml.gz
-	ligolw_add -v -o $@ astroInjections_sg.xml.gz astroInjections_btlwnb.xml.gz $<
+	ligolw_add -v -o $@ astroInjections_sg.xml.gz astroInjections_btlwnb.xml.gz zero_lag.xml.gz $<
 	rm astroInjections_sg.xml.gz astroInjections_btlwnb.xml.gz
 
 fake_search: ${INJ_XML} L1_PSD_measured.xml.gz
