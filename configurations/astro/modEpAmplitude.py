@@ -108,7 +108,7 @@ for idx, row in enumerate(sngl_burst):
 	new_compute_amplitude( row, measuredpsd)
 
 utils.write_filename(xmldoc, 'unc_new.xml.gz', gz = True)
-sys.exit()
+
 #tile energy E new
 print '\n making tile_energy_E new hrss files...'
 xmldoc = utils.load_filename('unclustered_results/L1-FAKE_STRAIN_Triggers.xml.gz')
