@@ -1,12 +1,11 @@
 START=1000000000
-#STOP=1000086400
-STOP=1000001000
+STOP=1000086400
 DUR=$(shell python -c "print ${STOP}-${START}")
 INJ_OFFSET=10
 SG_START=$(shell python -c "print ${START}+${INJ_OFFSET}")
 
 INJ_CHANNEL_NAME=FAKE-STRAIN
-INJ_XML=astroInjections.xml.gz
+INJ_XML=astroInjections_rescaled_uniform.xml.gz
 INJECTION_FRAME_TYPE=aligo_inject_mdc
 NOISE_FRAME_TYPE=aligo_noise_mdc
 
@@ -42,11 +41,21 @@ test_sg150q9.xml.gz: zero_lag.xml.gz
 
 	ligolw_add -v -o $@ $@ $<
 
-astroInjections_rescaled.xml.gz: astroInjections.xml.gz
+astroInjections_rescaled_gaussian.xml.gz: astroInjections.xml.gz
 	../../bin/ligolw_inj_snr  \
+		--calculate-only \
 		--det-psd-func H1=SimNoisePSDaLIGOZeroDetHighPower  \
 		--rescale-snr-normal-stddev 2  \
 		--rescale-snr-normal-mean 8  \
+		 $<
+	mv snr_rescaled.xml.gz $@
+
+astroInjections_rescaled_uniform.xml.gz: astroInjections.xml.gz
+	../../bin/ligolw_inj_snr  \
+		--calculate-only \
+		--det-psd-func H1=SimNoisePSDaLIGOZeroDetHighPower  \
+		--rescale-snr-uniform-min 3  \
+		--rescale-snr-uniform-max 50  \
 		 $<
 	mv snr_rescaled.xml.gz $@
 
@@ -74,7 +83,7 @@ astroInjections_sg.xml.gz:
     	--gps-start-time ${SG_START}  \
     	--gps-end-time ${STOP}  \
     	--output $@ \
-    	--seed 1 \
+    	--seed 2 \
     	--time-slide-id 0 \
     	--event-time-type fixed  \
     	--event-rate 1.05e6  \
@@ -198,9 +207,10 @@ V1_PSD_measured.png: V1_PSD_measured.xml.gz
 	./plot_psds_single V1 $@ $<
 
 clean:
-	rm *.cache
+	rm -rf *.cache
 	rm -rf aligo_noise_mdc/
 	rm -rf aligo_inject_mdc/
 	rm -rf aligo_inject_combined/
 	rm -rf *_measured_*.xml.gz
+	rm -rf astro*.xml.gz
 	rm -rf *.png
