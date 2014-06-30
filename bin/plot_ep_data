@@ -197,26 +197,19 @@ import glob
 flist = glob.glob("../L1/FAKE/STRAIN/*/*.xml*")
 if flist:
     trig_info_data = page.add_subpage("trig_info_data", "Trigger Table", "Trigger Info")
+for i, xmlfname in enumerate(flist):
+    print xmlfname
+    trig_info_sec = trig_info_data.add_section("trig_info_%d" % i, "Trigger Table (%s)" % xmlfname)
 
-# Merge XML docs into one
-from glue.ligolw.utils import ligolw_add, print_tables
-from glue.ligolw import utils, lsctables
-if len(flist) > 1:
-    xmldoc = utils.load_filename(flist[0])
-    ligolw_add.ligolw_add(xmldoc, flist[1:])
+    from glue.ligolw import utils, lsctables
+    from glue.ligolw.utils import print_tables
+    xmldoc = utils.load_filename(xmlfname)
+    with open(xmlfname.replace("xml.gz", "txt"), "w") as fout:
+        trig_table = print_tables.print_tables(xmldoc, fout, "wiki", tableList=[lsctables.SnglBurstTable.tableName], title="SnglBurst triggers (%s)" % xmlfname, columnList=["channel", "snr", "peak_time", "peak_time_ns", "central_freq", "chisq_dof"])
+    ttable, name = cbcwebpage.wiki_table_parse(xmlfname.replace("xml.gz", "txt"))
 
-trig_info_sec = trig_info_data.add_section("trig_info", "Trigger Table")
-
-with open("triggers.txt", "w") as fout:
-    trig_table = print_tables.print_tables(xmldoc, fout, "wiki", tableList=[lsctables.SnglBurstTable.tableName], title="SnglBurst triggers", columnList=["channel", "snr", "peak_time", "peak_time_ns", "duration", "central_freq", "bandwidth", "chisq_dof"])
-ttable, name = cbcwebpage.wiki_table_parse("triggers.txt")
-
-trig_info_sec.add_table(ttable[0], "Trigger table", "Table of trigger information. Channel indicates the channel analyzed, peak_time and peak_time_ns are the seconds and nanosecond field of the central time for each tile, duration is the width of the tile in the time domain, central frequency is the center frequency of the tile, bandwidth is the width of the tile in the frequency domain, and chisq_dof is the number of degrees of freedom present in that tile.")
-
-trig_info_sec.div("<br />Full Results XML<br />")
-for file in flist:
-    trig_info_sec.add_link(text="%s" % file, href=file)
-    trig_info_sec.div("<br />")
+    trig_info_sec.add_table(ttable[0], "Trigger table", "Trigger table")
+    trig_info_sec.add_link(text="Full Result XML", href=xmlfname)
 
 if os.path.exists("../trigmap.png"):
     trig_map_data = page.add_subpage("trig_map_data", "Trigger Maps", "Trigger Maps")
