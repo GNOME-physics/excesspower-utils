@@ -624,7 +624,7 @@ class EPOnlineCondorJob(CondorJob, object):
         """
         Set the name of the shared memory partition from which to draw data. Check with smlist command line utility, usually something like LHO_Data or LLO_Data.
         """
-        self.shn_part_name = shm_part_name
+        self.shm_part_name = shm_part_name
         self.add_opt("shared-memory-partition", "%s=%s" (self.instrument, self.shm_part_name))
 
     def set_config_file(self, config_path):
