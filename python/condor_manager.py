@@ -11,6 +11,7 @@ from ConfigParser import ConfigParser
 
 from glue.pipeline import CondorJob, CondorDAGJob, CondorDAGNode, CondorDAG
 from glue.segments import segment, segmentlist, segmentlistdict
+from glue.lal import Cache
 
 ONLINE_INCANTATION = {"+Online_Burst_ExcessPower": "True",
     "Requirements": "(Online_Burst_ExcessPower =?= True)" 
@@ -786,3 +787,38 @@ def get_condor_status(user=None):
         jobs.append(parse_condor_xml_node(job))
 
     return jobs
+
+class EPCondorJob(EPOnlineCondorJob, object):
+    """
+    Class representing a type of condor job corresponding to a gstlal_excesspower job with a predefined segment.
+    """
+        
+    def __init__(self, channel, configuration_file, rootdir, frame_cache, job_segment=None):
+        super(EPCondorJob, self).__init__(channel, configuration_file, rootdir)
+
+        # data source: Have to override hard init from base class
+        self._CondorJob__options["data-source"] = "frames"
+
+        self.frame_cache = frame_cache
+        self.add_opt("frame-cache", self.frame_cache)
+        if job_segment is None:
+            with open(self.frame_cache) as cache:
+                seg = Cache.fromfile(cache).to_segmentlistdict()[self.instrument[0]]
+                assert len(seg) == 1
+                seg = seg[0]
+            self.job_segment = glue.segments.segment(seg[0], seg[1])
+        else:
+            self.job_segment = job_segment
+        self.add_opt("gps-start-time", self.job_segment[0])
+        self.add_opt("gps-end-time", self.job_segment[1])
+
+    def set_segments_file(self, frame_segments, fs_name=None):
+        """
+        Set the name of the shared memory partition from which to draw data. Check with smlist command line utility, usually something like LHO_Data or LLO_Data.
+        """
+        self.frame_segments = frame_segments
+        self.add_opt("frame-segments", frame_segments)
+        # FIXME: is this allowed to be None?
+        if fs_name is not None:
+            self.add_opt("frame-segments-name", fs_name)
+
