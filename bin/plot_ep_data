@@ -1,126 +1,256 @@
 #!/usr/bin/env python
+import sys
 
 import matplotlib
 matplotlib.use("Agg")
 from matplotlib import pyplot
+import matplotlib.colors
+import matplotlib.cm
 
 import numpy
 
-idx0, idx1 = 16384*16, 16384*17
+from glue.segments import segment
+
+def plot_tf_map(data, fname, data_segment, bandwidth, interp="nearest", ts=None):
+    pyplot.figure(2)
+    pyplot.clf()
+    print fname, numpy.abs(data).max()
+    #data = data.T
+    #idx0, idx1 = len(data)/2-15, len(data)/2+15
+    #data = data[idx0:idx1].T
+    if ts is not None:
+        data_segment = (ts[0], ts[-1] + ts[1] - ts[0])
+    pyplot.imshow(data[::-1], extent=(0, data_segment[1]-data_segment[0], bandwidth[0], bandwidth[1]), interpolation=interp, aspect='equal')
+
+    # Hack to force equal aspect
+    ax = pyplot.gca()
+    ex = ax.get_images()[0].get_extent()
+    ax.set_aspect(abs((ex[1]-ex[0])/(ex[3]-ex[2])))
+
+    pyplot.xlabel("time (s), relative to %10.5f" % data_segment[0])
+    pyplot.ylabel("frequency (Hz)")
+    pyplot.colorbar()
+    pyplot.savefig(fname)
+
+def stack_plot(time, data, lowf=0.0, highf=1.0):
+
+    norm = matplotlib.colors.Normalize(lowf, highf)
+    colormap = matplotlib.cm.ScalarMappable(norm=norm, cmap=matplotlib.cm.hsv)
+
+    pyplot.figure()
+    sum_across_t = numpy.abs(data**2).cumsum(axis=0).T
+    for i, t_slice in enumerate(sum_across_t):
+        sum_across_t[i] = numpy.sqrt(t_slice / t_slice[-1])
+    sum_across_t = sum_across_t.T
+
+    # First is special
+    pyplot.fill_between(time, sum_across_t[0], color=colormap.to_rgba(lowf))
+
+    i = 1.0
+    for t_slice_lower, t_slice_upper in zip(sum_across_t[:-1], sum_across_t[1:]):
+        pyplot.fill_between(time, t_slice_lower, t_slice_upper, color=colormap.to_rgba(i/sum_across_t.shape[0]*highf))
+        i += 1
+    colormap.set_array([lowf, highf])
+    cb = pyplot.colorbar(colormap)
+    cb.set_label("Filter low frequency")
+
+    pyplot.xlim( (ts[0], ts[-1]) )
+    pyplot.xlabel("time (s), relative to %10.5f" % ts[0])
+    pyplot.savefig("fir_bank.png")
+
+scan_data = numpy.load(sys.argv[1])
 
 #
 # Plot input data time stream
 #
 
-ts, d = numpy.loadtxt("data.txt", unpack=True)
-ts_0 = ts[0]
-ts -= ts_0
+data_segment = segment(map(float, scan_data["segment"]))
+bandwidth = segment(map(float, scan_data["bandwidth"][:2]))
+base_band = scan_data["bandwidth"][-1]
 
-pyplot.figure(1)
-pyplot.plot(ts[idx0:idx1], d[idx0:idx1], 'k-')
+# Readjust upper frequency
+band = abs(bandwidth)
+band /= base_band
+highf = int(band)*base_band
+bandwidth = segment(bandwidth[0], highf)
+
+print "Data segment: %s\nsearch band: %s (%f Hz channels)" % (str(data_segment), str(bandwidth), base_band)
+
+ts, d = scan_data["time_series"].T
+ts -= data_segment[0]
+
+# TODO: Zoom on certain gps time
+# TODO: triple zoom plots?
+# TODO: D3.js enabled?
+pyplot.figure(0)
+pyplot.plot(ts, d, 'k-')
 pyplot.grid()
-pyplot.xlabel("time (s), relative to %10.5f" % ts_0)
+pyplot.xlabel("time (s), relative to %10.5f" % data_segment[0])
 pyplot.ylabel("strain")
 pyplot.savefig("input_data.png")
 
-pyplot.figure(0)
-pyplot.subplot(311)
-pyplot.plot(ts[idx0:idx1], d[idx0:idx1], 'k-')
-pyplot.grid()
-#pyplot.xlabel("time (s), relative to %10.5f" % ts_0)
-pyplot.ylabel("strain")
+# in case memory is a problem
+del ts, d
 
 #
 # Plot whitened data time stream
 #
 
-ts, d = numpy.loadtxt("whitened_data.txt", unpack=True)
-ts_0 = ts[0]
-ts -= ts_0
+pyplot.twinx()
+ts, d = scan_data["white_series"].T
+ts -= data_segment[0]
 
-pyplot.figure(1)
-pyplot.clf()
-pyplot.plot(ts[idx0/4:idx1/4], d[idx0/4:idx1/4], 'k-')
+pyplot.plot(ts, d, 'r-')
 pyplot.grid()
-pyplot.xlabel("time (s), relative to %10.5f" % ts_0)
+pyplot.xlabel("time (s), relative to %10.5f" % data_segment[0])
 pyplot.ylabel("whitened strain")
-pyplot.savefig("white_data.png")
-
-pyplot.figure(0)
-pyplot.subplot(312)
-pyplot.plot(ts[idx0/4:idx1/4], d[idx0/4:idx1/4], 'k-')
-pyplot.grid()
-#pyplot.xlabel("time (s), relative to %10.5f" % ts_0)
-pyplot.ylabel("whitened strain")
+pyplot.xlim((0, abs(data_segment)))
+pyplot.savefig("input_data.png")
+#pyplot.savefig("white_data.png")
 
 #
 # Plot FIR processed data
 #
 
-"""
-ts = numpy.loadtxt("fir_data.txt", unpack=True)
-ts, d = ts[0], ts[1:]
-ts_0 = ts[0]
-ts -= ts_0
+d = scan_data["filter_series"].T
+ts, d = d[0], d[1:]
+#ts -= data_segment[0]
+stack_plot(ts, d, bandwidth[0], bandwidth[1])
 
-pyplot.figure(1)
-pyplot.clf()
-pyplot.imshow(numpy.rot90(d[:,idx0/4:idx1/4]), extent=(ts_0, ts_0 + 1, 16, 2000), interpolation="nearest", aspect='equal')
+plot_tf_map(d, "fir_data.png", data_segment, bandwidth, ts=ts)
 
-# Hack to force equal aspect
-ax = pyplot.gca()
-ex = ax.get_images()[0].get_extent()
-ax.set_aspect(abs((ex[1]-ex[0])/(ex[3]-ex[2])))
+# norm fir_data
+#d *= 0.044194
 
-pyplot.xlabel("time (s), relative to %10.5f" % ts_0)
-pyplot.ylabel("frequency (Hz)")
-pyplot.colorbar()
-pyplot.savefig("fir_data.png")
-"""
+# simulate undersampling
+#d = d.T[::2**5].T
+#ts = ts[::2**5]
+#plot_tf_map(d**2, "us_fir_data.png", data_segment, bandwidth)
+
+#del ts, d
 
 #
-# Plot sum of squares data
+# Find all TF maps saved
 #
-
-ts = numpy.loadtxt("sq_data.txt", unpack=True)
-ts, d = ts[0], ts[1:]
-ts -= ts_0
-
-i=0
-ar = [(maxp, ar) for ar, maxp in zip(range(len(d)), numpy.max(d, axis=0))]
-ar.sort()
-maxd = ar[-1][1]
-
-pyplot.figure(1)
-pyplot.clf()
-for i in range(190, 200):
-	pyplot.plot(ts[idx0/1024:idx1/1024], d[i,idx0/1024:idx1/1024], '-')
-pyplot.grid()
-faps = [1e-2, 1e-4, 1e-6, 1e-8]
-from gstlal import excesspower as ep
-for f, t in zip(faps, map(ep.determine_thresh_from_fap, faps)):
-	pyplot.axhline(t**2)
-	pyplot.text(16.8, t**2, "FAP = %1.1e" % f)
-	
-pyplot.xlabel("time (s), relative to %10.5f" % ts_0)
-pyplot.ylabel("subbanded whitened\nstrain (2 DOF)")
-pyplot.savefig("2dof_data.png")
-
-pyplot.figure(0)
-pyplot.subplot(313)
-for i in range(190, 200):
-	pyplot.plot(ts[idx0/1024:idx1/1024], d[i,idx0/1024:idx1/1024], '-')
-#pyplot.plot(ts[idx0/1024:idx1/1024], d[194,idx0/1024:idx1/1024], 'k-')
-for f, t in zip(faps, map(ep.determine_thresh_from_fap, faps)):
-	pyplot.axhline(t**2)
-	pyplot.text(16.8, t**2, "FAP = %1.1e" % f)
-pyplot.grid()
-pyplot.xlabel("time (s), relative to %10.5f" % ts_0)
-pyplot.ylabel("subbanded whitened\nstrain (2 DOF)")
+print scan_data.files
+for key in filter(lambda s: "sq_sum_series_" in s, scan_data.files):
+    print key
+    d = scan_data[key].T
+    ts, d = d[0], d[1:]
+    #ts -= data_segment[0]
+    plot_tf_map(d, key + ".png", data_segment, bandwidth, ts=ts)
+    del ts, d
 
 #
-# Save summary plot
+# Make webpage
 #
-pyplot.figure(0)
-pyplot.subplots_adjust(bottom=0.1)
-pyplot.savefig("summary.png")
+import os
+from glue import cbcwebpage
+
+if not os.path.exists("scan/"):
+    os.makedirs("scan/")
+os.chdir("scan/")
+page = cbcwebpage.cbcpage(title="ExcessPower TF Scan", path="./")
+
+subp = page.add_subpage("overview", "ExcessPower Scan Overview", "ExcessPower Scan Overview")
+
+#subp.add_text(txt="GPS segment: %10.2f -- %10.2f" % (gps_start, gps_end))
+# TODO: Channel
+#Reference channel: %s <br/>
+subp.div("""
+<big><b>
+GPS segment (s): %10.6f -- %10.6f <br/>
+Search band (Hz): %4.4f -- %4.4f <br/>
+</b></big>
+""" % (data_segment[0], data_segment[1], bandwidth[0], bandwidth[1]))
+
+ts_data = page.add_subpage("ts_data", "Time Series Data", "Time Series Data")
+ts_sec = ts_data.add_section("ts_data_1", "Time Series")
+imgtab = cbcwebpage.image_glob("../input_data.png")
+cap = "Time series data"
+cap1 = "Black shows the input time series, and red is the whitened time series."
+ts_sec.add_table(imgtab, cap, cap1)
+
+fir_data = page.add_subpage("fir_data", "Filter Response", "Filter Response Data")
+
+fir_sec = fir_data.add_section("fir_data_1", "Filter Response")
+imgtab = cbcwebpage.image_glob("../fir_data.png")
+cap = "Filter response"
+cap1 = "Filter response over each channel in the bank, color representing the magnitude of the convolution of the filter with the data stream."
+fir_sec.add_table(imgtab, cap, cap1)
+
+fir_sec = fir_data.add_section("fir_data_2", "Filter Band Energy Contribution")
+imgtab = cbcwebpage.image_glob("../fir_bank.png")
+cap = "Filter bank energy division"
+cap1 = "Color corresponds to low frequency of channel. Height of channel color (time slice) is indicative of its proportion of energy contribution for that sample."
+fir_sec.add_table(imgtab, cap, cap1)
+
+sq_sum_data = page.add_subpage("sq_sum_data", "Energy TF Maps", "Energy TF maps")
+sq_sum_sec = sq_sum_data.add_section("sq_sum_0_2", "Energy TF maps")
+imgtab = cbcwebpage.image_glob("../sq_sum_series_level_0_dof_2.png")
+cap = "Energy map for TF resolution (NxM)"
+cap1 = "Color corresponds to energy of a given tile."
+sq_sum_sec.add_table(imgtab, cap, cap1)
+# Add additional resolutions
+
+import glob
+flist = glob.glob("../L1/FAKE/STRAIN/*/*.xml*")
+if flist:
+    trig_info_data = page.add_subpage("trig_info_data", "Trigger Table", "Trigger Info")
+for i, xmlfname in enumerate(flist):
+    print xmlfname
+    trig_info_sec = trig_info_data.add_section("trig_info_%d" % i, "Trigger Table (%s)" % xmlfname)
+
+    from glue.ligolw import utils, lsctables
+    from glue.ligolw.utils import print_tables
+    xmldoc = utils.load_filename(xmlfname)
+    with open(xmlfname.replace("xml.gz", "txt"), "w") as fout:
+        trig_table = print_tables.print_tables(xmldoc, fout, "wiki", tableList=[lsctables.SnglBurstTable.tableName], title="SnglBurst triggers (%s)" % xmlfname, columnList=["channel", "snr", "peak_time", "peak_time_ns", "central_freq", "chisq_dof"])
+    ttable, name = cbcwebpage.wiki_table_parse(xmlfname.replace("xml.gz", "txt"))
+
+    trig_info_sec.add_table(ttable[0], "Trigger table", "Trigger table")
+    trig_info_sec.add_link(text="Full Result XML", href=xmlfname)
+
+if os.path.exists("../trigmap.png"):
+    trig_map_data = page.add_subpage("trig_map_data", "Trigger Maps", "Trigger Maps")
+    trig_map_sec = trig_map_data.add_section("trigmap", "Trigger TF maps")
+    imgtab = cbcwebpage.image_glob("../trigmap.png")
+    cap = "Trigger map"
+    cap1 = "Color corresponds to SNR."
+    trig_map_sec.add_table(imgtab, cap, cap1)
+
+page.write("index")
+exit()
+
+for i, xmlsum in enumerate(xmlfiles):
+    i+=1
+
+    for sv in table.get_table(utils.load_filename(xmlsum), lsctables.SearchSummVarsTable.tableName):
+        if sv.name != "winner":
+            continue
+        winner = sv.string
+
+    page.add_subpage("round%d" % i, "Round %d" % i, "Round %d" % i)
+    sec = page.subpages["round%d" % i].add_section("r1summ", "Round %d Summary" % i)
+
+    ttable, name = cbcwebpage.wiki_table_parse(xmlsum.replace("xml.gz", "txt"))
+    sec.add_table(ttable[0], "Round summary", "Round summary")
+    sec.add_link(text="Full Result XML", href=xmlsum)
+
+    ssec = sec.add_section("r1summplot", "Round %d Summary Plot" % i)
+
+    imgtab = cbcwebpage.image_glob("*_round_%d_summary.png" % i)
+    cap = "Round %d HVeto summary" % i
+    cap1 = "Round %d HVeto summary, winner %s" % (i, winner)
+    ssec.add_table(imgtab, cap, cap1)
+
+    # TODO: Add significance drop
+
+    ssec = sec.add_section("vetotrigs", "Round %d Vetoed Triggers" % i)
+    ttable, name = cbcwebpage.wiki_table_parse(xmlsum.replace("xml.gz", "trigs"))
+    ssec.add_table(ttable[0], "Vetoed Triggers", "Vetoed Triggers")
+
+    ssec = sec.add_section("vetosegs", "Round %d Veto Segments" % i)
+    ttable, name = cbcwebpage.wiki_table_parse(xmlsum.replace("xml.gz", "segs"))
+    ssec.add_table(ttable[0], "Veto Segments", "Veto Segments")
+
