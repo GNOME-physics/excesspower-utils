@@ -200,22 +200,28 @@ elif cmd == "set":
     for chan in channels:
         for entry in opts.entry:
             name, val = entry.split("=")
-            if hasattr(chan, name):
-                setattr(chan, name, val)
 
             try:
-                chan.set_config_attr(name, val)
+                if hasattr(chan, name):
+                    old_attr = getattr(chan, name)
+                    setattr(chan, name, val)
+                else:
+                    old_attr = chan.get_config_attr(name)
+                    chan.set_config_attr(name, val)
             except AttributeError:
                 print "Manager for channel %s does not have entry %s, skipping" % (chan.channel, name)
                 continue
 
-            print "Set %s to %s for channel %s" % (name, getattr(chan, name), chan.full_name())
+            print "Set %s to %s for channel %s (was %s)" % (name, getattr(chan, name), chan.full_name(), old_attr)
             #chan.write_config_file(sys.stdout)
 
     cfgs = condor_manager.write_all_configs(chan_list, append=True)
-    cfgs = [c.replace(rootdir, "") for c in cfgs]
-    chan_repo.index.add(cfgs)
-    chan_repo.index.commit("Set %s for channels %s" % ("/".join(opts.entry), ", ".join([c.full_name() for c in channels])))
+    if chan_repo.index.diff(None):
+        cfgs = [c.replace(rootdir, "") for c in cfgs]
+        chan_repo.index.add(cfgs)
+        chan_repo.index.commit("Set %s for channels %s" % ("/".join(opts.entry), ", ".join([c.full_name() for c in channels])))
+    else:
+        print "No changes to configuration files, no commit to record."
 
 elif cmd == "start":
     while not pqueue.empty():
@@ -236,14 +242,17 @@ elif cmd == "start":
         chan_repo.index.add(map(os.path.relpath, [manager.configuration_file, manager.get_sub_file()]))
         chan_repo.index.commit("Added condor/configuration files for channels %s" % manager.full_name())
 
-    cfgs = condor_manager.write_all_configs(chan_list, append=True)
-    cfgs = [c.replace(rootdir, "") for c in cfgs]
-    chan_repo.index.add(cfgs)
-    if channels:
-        msg = "Changed configurations (reason: condor running) for channels:\n\t%s" % ("\n\t ".join([c.full_name() for c in channels]))
+    if chan_repo.index.diff(None):
+        cfgs = condor_manager.write_all_configs(chan_list, append=True)
+        cfgs = [c.replace(rootdir, "") for c in cfgs]
+        chan_repo.index.add(cfgs)
+        if channels:
+            msg = "Changed configurations (reason: condor running) for channels:\n\t%s" % ("\n\t ".join([c.full_name() for c in channels]))
+        else:
+            msg = "Changed configurations (reason: condor running) for all channels"
+        chan_repo.index.commit(msg)
     else:
-        msg = "Changed configurations (reason: condor running) for all channels"
-    chan_repo.index.commit(msg)
+        print "No changes to configuration files, no commit to record."
 
 elif cmd == "kill":
     while not pqueue.empty():
