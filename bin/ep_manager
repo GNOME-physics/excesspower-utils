@@ -49,7 +49,7 @@ def print_status(channels):
         hdr += "\n" + "-"*len(hdr)
         print hdr
         for k, v in stat.iteritems():
-            print "\t%s: %s" % (k, str(v or ""))
+            print "\t%s: %s" % (k, str(v))
         print ""
 
 help_dict = {
@@ -200,12 +200,17 @@ elif cmd == "set":
     for chan in channels:
         for entry in opts.entry:
             name, val = entry.split("=")
-            if not hasattr(chan, name):
+            if hasattr(chan, name):
+                setattr(chan, name, val)
+
+            try:
+                chan.set_config_attr(name, val)
+            except AttributeError:
                 print "Manager for channel %s does not have entry %s, skipping" % (chan.channel, name)
                 continue
-            chan.set_config_attr(name, val)
-            print "Set %s to %s for channel %s" % (name, getattr(chan, name), chan.channel)
-            chan.write_config_file(sys.stdout)
+
+            print "Set %s to %s for channel %s" % (name, getattr(chan, name), chan.full_name())
+            #chan.write_config_file(sys.stdout)
 
     cfgs = condor_manager.write_all_configs(chan_list, append=True)
     cfgs = [c.replace(rootdir, "") for c in cfgs]
