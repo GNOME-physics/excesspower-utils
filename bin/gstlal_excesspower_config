@@ -21,7 +21,7 @@ optp.add_option("-b", "--minimum-bandwidth", help="Minimum bandwidth to use. Def
 optp.add_option("-B", "--maximum-bandwidth", help="Maximum bandwidth to use. Default is to allow resolution levels up to the maximum bandwitdth allowed by the search bandwidth constraints.")
 optp.add_option("-n", "--maximum-dof", type=int, default=128, help="Maximum number of degrees of freedom in powers of two. Default is 128.")
 optp.add_option("-d", "--maximum-duration", type=float, help="Maximum duration tile to produce. Overrides maximum DOF if both are provided.")
-optp.add_option("-p", "--fap-thresh", type=float, default=1e7, help="False alarm probability threshold to apply. Default is 1e-7.")
+optp.add_option("-p", "--fap-thresh", type=float, default=1e-7, help="False alarm probability threshold to apply. Default is 1e-7.")
 
 # output options
 optp.add_option("-o", "--configuration-file", help="Name of confguration file to write. Default is stdout")
