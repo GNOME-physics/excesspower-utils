@@ -13,6 +13,13 @@ ONLINE_INCANTATION = {"+Online_Burst_ExcessPower": "True",
     "Requirements": "(Online_Burst_ExcessPower =?= True)" 
 }
 
+import glob
+import stat
+def which(prog):
+    for path in os.environ["PATH"].split(":"):
+        if any([prog == prg for prg in map(os.path.basename, [p for p in glob.glob(path + "/*") if os.stat(p).st_mode & stat.S_IXUSR])]):
+            return os.path.join(path, prog)
+
 # NOTE: pipeline classes are old-style. ...really?
 class EPOnlineCondorJob(CondorJob, object):
     """
@@ -50,7 +57,7 @@ class EPOnlineCondorJob(CondorJob, object):
         return manager
 
     def __init__(self, channel, configuration_file, rootdir):
-        super(EPOnlineCondorJob, self).__init__(universe="vanilla", executable="./gstlal_excesspower", queue=1)
+        super(EPOnlineCondorJob, self).__init__(universe="vanilla", executable=which("gstlal_excesspower"), queue=1)
 
         self.instrument, self.channel = channel.split(":")
         self.subsys = self.channel.split("-")[0]
@@ -179,9 +186,9 @@ class EPOnlineCondorJob(CondorJob, object):
         self.on_bits, self.off_bits = on_bits, off_bits
         self.add_opt("dq-channel", "%s=%s" % (self.instrument, self.dq_channel))
         if self.on_bits is not None:
-            self.add_opt("state-vector-on-bits", "%x" % self.on_bits)
+            self.add_opt("state-vector-on-bits", "0x%x" % self.on_bits)
         if self.off_bits is not None:
-            self.add_opt("state-vector-off-bits", "%x" % self.off_bits)
+            self.add_opt("state-vector-off-bits", "0x%x" % self.off_bits)
 
     def set_shm_partition(self, shm_part_name):
         """
