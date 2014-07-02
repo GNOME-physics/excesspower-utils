@@ -38,8 +38,8 @@ def load_subsystem_configuration(cfgp, channels=None):
 #
 def print_help_str(cmd, help_dict):
     if help_dict.has_key(cmd):
-        print "Help for %s" % cmd
-        print help_dict[cmd]
+        print "Help for %s:" % cmd
+        print "\t" + help_dict[cmd]
     else:
         print "Don't recognize %s, known commands: %s" % (cmd, help_dict.keys())
 
@@ -54,6 +54,13 @@ def print_status(channels):
 
 help_dict = {
     "status": """Query the status of a set of channels. Without the --channel argument, query all known channels.""",
+    "chan_init": """Initialize a set of channels. Use with the -s option to initialize an entire subsystem at once.""",
+    "condor_status": """Inquire about the status of the channels in condor.""",
+    "copy_channel": """Copy the configuration of one channel to another, changing only the names and relative paths.""",
+    "delete_channel": """Delete channel from configuration.""",
+    "set": """Change a value for a given set of channels (using -c).""",
+    "start": """Submit a channel(s) to condor for processing.""",
+    "kill": """Kill a channel(s) condor processing.""",
     "help": """META"""
 }
 
@@ -104,7 +111,12 @@ if is_already_repo(rootdir):
 
 cmd = arg[0]
 if cmd is None or cmd == "help":
-    print_help_str(arg[1], help_dict)
+    if arg[1:]:
+        print_help_str(arg[1], help_dict)
+    else:
+        for help_item in help_dict:
+            print_help_str(help_item, help_dict)
+            print ""
     exit()
 elif cmd == "status":
     print_status(channels)
