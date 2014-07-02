@@ -107,7 +107,7 @@ class EPOnlineCondorJob(CondorJob, object):
         self.iwd = None
 
     def status(self, attrs=None):
-        return OrderedDict([ (k, getattr(self, k) or "") for k in ['instrument', 'subsys', 'channel', "sample_rate", "downsample_rate", 'configuration_file', 'dq_channel', 'off_bits', 'on_bits', 'shm_part_name']])
+        return OrderedDict([ (k, getattr(self, k)) for k in ['instrument', 'subsys', 'channel', "sample_rate", "downsample_rate", 'configuration_file', 'dq_channel', 'off_bits', 'on_bits', 'shm_part_name']])
 
     def condor_status(self, attrs=None):
         return OrderedDict([ (k, getattr(self, k)) for k in ['ncpu', 'mem_req', 'root_dir', 'iwd', 'log_path', 'err_log_path', 'out_log_path']])
