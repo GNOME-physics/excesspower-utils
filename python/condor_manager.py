@@ -20,6 +20,204 @@ def which(prog):
         if any([prog == prg for prg in map(os.path.basename, [p for p in glob.glob(path + "/*") if os.stat(p).st_mode & stat.S_IXUSR])]):
             return os.path.join(path, prog)
 
+class EPCondorJob(CondorJob, object):
+    """
+    Class representing a type of condor job corresponding to an gstlal_excesspower job.
+    """
+    @classmethod
+    def from_config_section(cls, cfgp, sec, rootdir):
+        """
+        Create an instance from a section in a subsystem configuration file.
+        """
+        chan_cfg_file = cfgp.get(sec, "configuration_file")
+        manager = EPCondorJob(sec, chan_cfg_file, rootdir)
+
+        sample_rate = cfgp.getint(sec, "sample_rate")
+        if cfgp.has_option(sec, "downsample_rate"):
+            ds_rate = cfgp.getint(sec, "downsample_rate")
+        else:
+            ds_rate = None
+        manager.set_sample_rate(sample_rate, ds_rate)
+        return manager
+
+    def __init__(self, channel, configuration_file, rootdir, **kwargs):
+        super(EPOnlineCondorJob, self).__init__(universe="vanilla", executable=which("gstlal_excesspower"), queue=1)
+
+        self.instrument, self.channel = channel.split(":")
+        self.subsys = self.channel.split("-")[0]
+
+        self.root_dir = rootdir
+
+        self.set_config_file(configuration_file)
+
+        # Number of cores to request for this job
+        self.ncpu = 1
+
+        # Amount of memory to request
+        self.mem_req = 1024
+
+        # Since gstreamer doesn't always tell us what's wrong, we'll
+        # enable basic error reporting
+        self.add_condor_cmd("environment", "GST_DEBUG=2")
+
+        #
+        # Things that are likely to be true for this
+        #
+
+        # channel specification
+        self.add_opt("channel-name", "%s=%s" % (self.instrument, self.channel))
+        
+        # data source: frames
+        if kwargs.has_key("cache_filename"):
+            self.add_opt("data-source", "frames")
+            self.add_opt("frame-cache", kwargs["cache_filename"])
+
+        # Check for segments
+        if kwargs.has_key("segments_filename"):
+            self.add_opt("frame-segments-file", kwargs["segments_filename"])
+            if not kwargs.has_key("segments_name"):
+                raise ValueError("'segments_name' argument must be supplied when using 'segments_filename'")
+            self.add_opt("frame-segments-name", kwargs["segments_name"])
+
+        # Please be verbose, thank you!
+        self.add_arg("verbose")
+
+        self.sample_rate, self.downsample_rate = None, None
+
+        self.out_log_path = None
+        self.err_log_path = None
+        self.log_path = None
+        self.iwd = None
+
+    def status(self, attrs=None):
+        return OrderedDict([ (k, getattr(self, k)) for k in ['instrument', 'subsys', 'channel', "sample_rate", "downsample_rate", 'configuration_file']])
+
+    def condor_status(self, attrs=None):
+        return OrderedDict([ (k, getattr(self, k)) for k in ['ncpu', 'mem_req', 'root_dir', 'iwd', 'log_path', 'err_log_path', 'out_log_path']])
+
+    def full_name(self):
+        """
+        Get the 'fully qualified' name of the channel.
+        """
+        return "%s:%s" % (self.instrument, self.channel)
+
+    # Utility to allow the class to call the underlying configuration object
+    # so we can query things about it if we want
+    def get_config_attr(self, attr):
+        for sec in self.cfg.sections():
+            if self.cfg.has_option(sec, attr.replace("_", "-")):
+                return self.cfg.get(sec, attr.replace("_", "-"))
+        raise AttributeError(attr)
+
+    def set_config_attr(self, attr, val):
+        for sec in self.cfg.sections():
+            if self.cfg.has_option(sec, attr.replace("_", "-")):
+                self.cfg.set(sec, attr.replace("_", "-"), val)
+                return
+        setattr(self, attr, val)
+
+    def set_sample_rate(self, rate, downsample_rate=None):
+        """
+        Since the sample rate controls much about what the process will do and some of the default options, it has its own setter so that it can reconfigure as appropriate.
+        """
+
+        if rate > 2048:
+            self.ncpu = 2
+            self.mem_req = 2048
+        else:
+            self.ncpu = 1
+            self.mem_req = 1024
+
+        self.sample_rate = rate
+        if downsample_rate is not None:
+            self.add_opt("sample-rate", downsample_rate)
+            self.downsample_rate = downsample_rate
+
+        self.add_condor_cmd("request_cpu", str(self.ncpu))
+        self.add_condor_cmd("request_memory", str(self.mem_req))
+
+    def cluster(self):
+        """
+        Enable clustering. WARNING: Currently, once you've set this, there's no going back. You have to make a new instance of the class to reset it.
+        """
+        self.add_arg("clustering")
+        # FIXME: This should be a toggle, so we need to test:
+        # del self.__options["clustering"]
+
+    def do_getenv(self):
+        """
+        Pull in user environment. Useful for running EP from non-system releases.
+        """
+        self.add_condor_cmd("getenv", "True")
+        # FIXME: This should be a toggle, so we need to test:
+        # del self.__condor_cmds["getenv"]
+
+    def set_config_file(self, config_path):
+        """
+        Set the instance configuration file path. This will both set it in the condor job as well as make the attributes available through this instance.
+        """
+        self.configuration_file = config_path
+        if self.configuration_file:
+            self.cfg = ConfigParser()
+            self.cfg.read(self.configuration_file)
+        else:
+            self.cfg = None
+        self.add_opt("initialization-file", self.configuration_file)
+
+    def write_config_file(self, out_path):
+        """
+        Write out configuration file for this instance of EP. If out_path is a writable stream, write out config file, but do not change internal path.
+        """
+        if hasattr(out_path, "write"):
+            self.cfg.write(out_path)
+            return
+
+        with open(out_path, "w") as fout:
+            self.cfg.write(fout)
+        self.configuration_file = out_path
+
+    def set_root_directory(self, path):
+        """
+        Set the root directory from which to stage this job.
+        """
+        self.root_dir = path
+
+    def get_wd(self):
+        """
+        Get the base directory for this job.
+        """
+        return os.path.join(os.path.abspath(self.root_dir), self.instrument, self.subsys, self.channel)
+
+    def finalize(self):
+        """
+        Create directory structure, and write out relevant files.
+        """
+
+        self.iwd = self.get_wd()
+        self.add_condor_cmd("iwd", self.iwd)
+        if not os.path.exists(self.iwd):
+            os.makedirs(self.iwd)
+
+        log_path = os.path.join(self.iwd, "logs")
+        if not os.path.exists(log_path):
+            os.makedirs(log_path)
+
+        self.out_log_path = os.path.join(log_path, "%s_%s_output-$(Cluster).out" % (self.instrument, self.channel))
+        self.set_stdout_file(self.out_log_path)
+        self.err_log_path = os.path.join(log_path, "%s_%s_error-$(Cluster).err" % (self.instrument, self.channel))
+        self.set_stderr_file(self.err_log_path)
+        self.log_path = os.path.join(log_path, "%s_%s_log-$(Cluster).log" % (self.instrument, self.channel))
+        self.set_log_file(self.log_path)
+
+        cfg_file = os.path.join(self.iwd, "%s_%s_config.ini" % (self.instrument, self.channel))
+        self.write_config_file(cfg_file)
+        # Reset the path so the submit file knows where to go
+        self.set_config_file(cfg_file)
+
+        self.sub_file = os.path.join(self.iwd, "%s_%s_submit.sub" % (self.instrument, self.channel))
+        self.set_sub_file(self.sub_file)
+        self.write_sub_file()
+
 # NOTE: pipeline classes are old-style. ...really?
 class EPOnlineCondorJob(CondorJob, object):
     """
