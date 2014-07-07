@@ -268,3 +268,5 @@ elif cmd == "kill":
             exit("OHNOES!")
         else:
             print "Killed condor job for channel %s" % manager.channel
+else:
+    print >>sys.stderr, "Command %s not recognized, no action taken" % cmd
