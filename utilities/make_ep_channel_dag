@@ -23,6 +23,8 @@ optp.add_option("-e", "--end-gps-time", action="store", type=int, help="Restrict
 optp.add_option("-n", "--no-segments", action="store_true", help="No gps time restrictions. Just use the cache times, or run forever.")
 optp.add_option("-o", "--output", action="store", help="Name of the file to save the DAG to.")
 
+import warnings
+warnings.warn("This script is deprecated in favor of ep_trigger_pipe. Please that instead.", DeprecationWarning)
 opts, args = optp.parse_args()
 
 defaults = {
