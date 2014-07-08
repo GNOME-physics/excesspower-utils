@@ -1,5 +1,7 @@
 import sys
 import os
+import glob
+import stat
 import itertools
 from collections import OrderedDict
 import subprocess
@@ -7,20 +9,27 @@ import shlex
 from xml.etree import ElementTree
 from ConfigParser import ConfigParser
 
-from glue.pipeline import CondorJob
+from glue.pipeline import CondorJob, CondorDAGJob, CondorDAGNode, CondorDAG
+from glue.segments import segment, segmentlist, segmentlistdict
 
 ONLINE_INCANTATION = {"+Online_Burst_ExcessPower": "True",
     "Requirements": "(Online_Burst_ExcessPower =?= True)" 
 }
 
-import glob
-import stat
+#
+# General utils
+#
+
 def which(prog):
     for path in os.environ["PATH"].split(":"):
         if any([prog == prg for prg in map(os.path.basename, [p for p in glob.glob(path + "/*") if os.stat(p).st_mode & stat.S_IXUSR])]):
             return os.path.join(path, prog)
 
-class EPCondorJob(CondorJob, object):
+#
+# Offline job classes and utils
+#
+
+class EPCondorJob(CondorDAGJob, object):
     """
     Class representing a type of condor job corresponding to an gstlal_excesspower job.
     """
@@ -41,7 +50,7 @@ class EPCondorJob(CondorJob, object):
         return manager
 
     def __init__(self, channel, configuration_file, rootdir, **kwargs):
-        super(EPOnlineCondorJob, self).__init__(universe="vanilla", executable=which("gstlal_excesspower"), queue=1)
+        super(EPCondorJob, self).__init__(universe="vanilla", executable=which("gstlal_excesspower"))
 
         self.instrument, self.channel = channel.split(":")
         self.subsys = self.channel.split("-")[0]
@@ -66,28 +75,34 @@ class EPCondorJob(CondorJob, object):
 
         # channel specification
         self.add_opt("channel-name", "%s=%s" % (self.instrument, self.channel))
-        
-        # data source: frames
-        if kwargs.has_key("cache_filename"):
-            self.add_opt("data-source", "frames")
-            self.add_opt("frame-cache", kwargs["cache_filename"])
-
-        # Check for segments
-        if kwargs.has_key("segments_filename"):
-            self.add_opt("frame-segments-file", kwargs["segments_filename"])
-            if not kwargs.has_key("segments_name"):
-                raise ValueError("'segments_name' argument must be supplied when using 'segments_filename'")
-            self.add_opt("frame-segments-name", kwargs["segments_name"])
 
         # Please be verbose, thank you!
-        self.add_arg("verbose")
+        self.add_opt("verbose", "")
 
         self.sample_rate, self.downsample_rate = None, None
+        self.frame_cache, self.segments, self.segments_name = None, None, None
 
         self.out_log_path = None
         self.err_log_path = None
         self.log_path = None
         self.iwd = None
+
+    def set_data_source(self, **kwargs):
+        # data source: frames
+        if kwargs.has_key("cache_filename"):
+            self.frame_cache = kwargs["cache_filename"]
+            self.add_opt("data-source", "frames")
+            self.add_opt("frame-cache", self.frame_cache)
+            self.add_opt("gps-start-time", "$(macrogpsstart)")
+            self.add_opt("gps-end-time", "$(macrogpsend)")
+        else:
+            raise ValueError("set_data_source: did not get kwarg corresponding to known data source")
+
+    def set_segments(self, segments_filename, segments_name):
+        # Check for segments
+        self.segments, self.segments_name = segments_filename, segments_name
+        self.add_opt("frame-segments-file", self.segments_filename)
+        self.add_opt("frame-segments-name", self.segments_name)
 
     def status(self, attrs=None):
         return OrderedDict([ (k, getattr(self, k)) for k in ['instrument', 'subsys', 'channel', "sample_rate", "downsample_rate", 'configuration_file']])
@@ -130,8 +145,8 @@ class EPCondorJob(CondorJob, object):
 
         self.sample_rate = rate
         if downsample_rate is not None:
-            self.add_opt("sample-rate", downsample_rate)
             self.downsample_rate = downsample_rate
+        self.add_opt("sample-rate", str(downsample_rate or self.sample_rate))
 
         self.add_condor_cmd("request_cpu", str(self.ncpu))
         self.add_condor_cmd("request_memory", str(self.mem_req))
@@ -218,6 +233,103 @@ class EPCondorJob(CondorJob, object):
         self.set_sub_file(self.sub_file)
         self.write_sub_file()
 
+def subdivide(seg, length, min_len=0):
+    """
+    Subdivide a segment into smaller segments based on a given length. Enforce a given minimum length at the end, if necessary. If the remainder segment is smaller than the minimum length, then the last two segments will span the remainder plus penultimate segment, with the span divided evenly between the two.
+
+    Input segment: (0, 10] subdivide 3 min 2
+    Output segment(s): (0, 3], (3, 6], (6, 8], (8, 10]
+    """
+    assert length >= min_len
+    if abs(seg) < min_len:
+        return segmentlist([])
+    if abs(seg) <= length:
+        return segmentlist([seg])
+
+    subsegl = segmentlist([])
+    for i in range(int(float(abs(seg))/length)):
+        st = seg[0]
+        subsegl.append(segment(st+length*i, st+length*(i+1)))
+
+    # Make an attempt to subdivide evenly.
+    if float(abs(seg)) % length <= min_len:
+        s1 = subsegl.pop()
+        rem_len = float(abs(s1)) + (float(abs(seg)) % length)
+        s2 = segment(seg[1]-rem_len/2, seg[1])
+        s1 = segment(s1[0], seg[1]-rem_len/2)
+        subsegl.append(s1)
+        subsegl.append(s2)
+    else:
+        subsegl.append(segment(subsegl[-1][1], seg[1]))
+
+    return subsegl
+
+def shift_to_overlap(segl, shift, skip_first=True):
+    prev_end = segl[-1][1]
+    for i, seg in enumerate(segl):
+        if i == 0 and skip_first:
+            continue
+   
+        segl[i] = segment(segl[i][0] - shift, segl[i][1])
+    return segl
+
+# FIXME: Make loss of whitening time not hardcoded to 120 seconds -- it
+# could be much larger for lower rate channels
+WHITEN_TIME = 120  # s
+def write_offline_dag(seg, ini_file, cache_file, subd_intrv=3600*4, rootdir='./', segments_file=None, segments_name=None, write_script=False, write_subdags=False):
+    """
+    Write a DAG for a set of channels with segments provided through the segment list dictionary (seg_dict). subd_intrv is the interval over which segments larger than this number will be subdivded into individual jobs. Segments of time that are directly adjacent will be overlapped so as not to lose time to whitening effects.
+		FIXME: Fixed PSD options
+    """
+    cfgp = ConfigParser()
+    res = cfgp.read(ini_file)
+    if res == []:
+        raise ValueError("No configuration files read")
+
+    # Expand out the cache file to ensure no relative path names
+    cache_file = os.path.abspath(cache_file)
+
+    uberdag = CondorDAG(log=rootdir)
+    #for channel, segl in seg_dict.iteritems():
+    for channel in cfgp.sections():
+        print "Channel %s, full analysis segment %s" % (channel, seg)
+        subdag = CondorDAG(log=rootdir)
+
+        ep_job = EPCondorJob.from_config_section(cfgp, channel, rootdir)
+        ep_job.set_data_source(cache_filename=cache_file)
+        if segments_file is not None:
+            ep_job.set_segments(segments_filename=segments_file, segments_name=name)
+        ep_job.do_getenv()
+        ep_job.finalize()
+
+        #
+        # Subdivide and prune segments which we simply can't analyze because 
+        # the entire segment would be thrown away due to whitener effets
+        # NOTE: This won't be a problem with a fix-psd option
+        # 
+        #for subsegl in [subdivide(segl, subd_intrv, WHITEN_TIME)]:
+        for subsegl in [shift_to_overlap(subdivide(seg, subd_intrv, WHITEN_TIME), WHITEN_TIME)]:
+            for subseg in subsegl:
+                node = CondorDAGNode(ep_job)
+                node.add_macro("macrogpsstart", subseg[0]) 
+                node.add_macro("macrogpsend", subseg[1]) 
+                subdag.add_node(node)
+                uberdag.add_node(node)
+                # TODO: Add bucluster and plot jobs here
+
+        dagname = "excesspower_%s_%d_%d" % (channel.replace(":","_").replace("-","_"), seg[0], seg[1])
+        subdag.set_dag_file(dagname)
+        if write_subdags:
+            subdag.write_concrete_dag()
+        if write_script:
+            subdag.write_script()
+
+    return uberdag
+
+#
+# Online job classes and utils
+#
+
 # NOTE: pipeline classes are old-style. ...really?
 class EPOnlineCondorJob(CondorJob, object):
     """
@@ -297,7 +409,7 @@ class EPOnlineCondorJob(CondorJob, object):
         self.add_arg("enable-channel-monitoring")
 
         # Please be verbose, thank you!
-        self.add_arg("verbose")
+        self.add_opt("verbose", "")
 
         # Things that are off by default
         self.dq_channel = None
