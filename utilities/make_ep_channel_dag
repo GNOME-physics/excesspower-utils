@@ -34,7 +34,7 @@ defaults = {
 
 dagentry = """JOB %(job_name)s %(subfile)s
 RETRY %(job_name)s 10
-VARS %(job_name)s instrument="%(instrument)s" channel="%(channel)s" sample_rate="%(sample_rate)s" ini_file="%(ini_file)s" """
+VARS %(job_name)s instrument="%(instrument)s" channel="%(channel)s" sample_rate="%(sample_rate)s" ini_file="%(configuration_file)s" """
 dagentry_time = """gps_start="%(gps_start)d" gps_end="%(gps_end)d" """
 # FIXME: Don't hardcode the blocksize
 dagentry_block = """blocksize="131072" """
@@ -136,16 +136,16 @@ for seg in slist:
 		#print "Scanning channel %s configuration" % channel
 		sec = copy.copy( defaults )
 		sec.update( dict( cfg.items( channel ) ) )
-		sec['channel'] = channel
+		sec['channel'] = channel.split(":")[-1]
 		sec['job_name'] = channel 
 		sec['subfile'] = os.path.abspath( subfile )
 		append = ""
 		if sec.has_key("odc_channel"):
 			append += dagentry_dq % sec
 		try:
-			sec['ini_file']
+			sec['configuration_file']
 		except KeyError:
-			sec['ini_file'] = inifile
+			sec['configuration_file'] = inifile
 		if not opts.no_segments:
 			sec['gps_start'] = seg[0]
 			sec['gps_end'] = seg[1]
