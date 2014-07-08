@@ -174,7 +174,9 @@ class EPCondorJob(CondorDAGJob, object):
         self.configuration_file = config_path
         if self.configuration_file:
             self.cfg = ConfigParser()
-            self.cfg.read(self.configuration_file)
+            res = self.cfg.read(self.configuration_file)
+            if res == []:
+                raise ValueError("No configuration files read.")
         else:
             self.cfg = None
         self.add_opt("initialization-file", self.configuration_file)
@@ -230,6 +232,93 @@ class EPCondorJob(CondorDAGJob, object):
         self.set_config_file(cfg_file)
 
         self.sub_file = os.path.join(self.iwd, "%s_%s_submit.sub" % (self.instrument, self.channel))
+        self.set_sub_file(self.sub_file)
+        self.write_sub_file()
+
+class EPBuclusterJob(CondorDAGJob, object):
+    """
+    Class representing a type of condor job corresponding to an gstlal_excesspower job.
+    """
+    def __init__(self, channel, rootdir):
+        super(EPBuclusterJob, self).__init__(universe="vanilla", executable=which("ligolw_bucluster"))
+
+        self.instrument, self.channel = channel.split(":")
+        self.subsys = self.channel.split("-")[0]
+
+        self.root_dir = rootdir
+
+        # Number of cores to request for this job
+        self.ncpu = 1
+
+        # Amount of memory to request
+        self.mem_req = 2048
+
+        self.add_condor_cmd("request_cpu", str(self.ncpu))
+        self.add_condor_cmd("request_memory", str(self.mem_req))
+
+        #
+        # Things that are likely to be true for this
+        #
+
+        # Please be verbose, thank you!
+        self.add_opt("verbose", "")
+
+        # Use the 'excesspower' type cluster algorithm
+        self.add_opt("cluster-algorithm", "excesspower")
+
+        # Look for triggers from gstlal_excesspower
+        self.add_opt("program", "gstlal_excesspoer")
+
+        # WHere to get input
+        self.add_opt("input-cache", "$(macroinpcache)")
+
+        self.out_log_path = None
+        self.err_log_path = None
+        self.log_path = None
+        self.iwd = None
+
+    def do_getenv(self):
+        """
+        Pull in user environment. Useful for running EP from non-system releases.
+        """
+        self.add_condor_cmd("getenv", "True")
+        # FIXME: This should be a toggle, so we need to test:
+        # del self.__condor_cmds["getenv"]
+
+    def set_root_directory(self, path):
+        """
+        Set the root directory from which to stage this job.
+        """
+        self.root_dir = path
+
+    def get_wd(self):
+        """
+        Get the base directory for this job.
+        """
+        return os.path.join(os.path.abspath(self.root_dir), self.instrument, self.subsys, self.channel)
+
+    def finalize(self):
+        """
+        Create directory structure, and write out relevant files.
+        """
+
+        self.iwd = self.get_wd()
+        self.add_condor_cmd("iwd", self.iwd)
+        if not os.path.exists(self.iwd):
+            os.makedirs(self.iwd)
+
+        log_path = os.path.join(self.iwd, "logs")
+        if not os.path.exists(log_path):
+            os.makedirs(log_path)
+
+        self.out_log_path = os.path.join(log_path, "%s_%s_bucluster_output-$(Cluster).out" % (self.instrument, self.channel))
+        self.set_stdout_file(self.out_log_path)
+        self.err_log_path = os.path.join(log_path, "%s_%s_bucluster_error-$(Cluster).err" % (self.instrument, self.channel))
+        self.set_stderr_file(self.err_log_path)
+        self.log_path = os.path.join(log_path, "%s_%s_bucluster_log-$(Cluster).log" % (self.instrument, self.channel))
+        self.set_log_file(self.log_path)
+
+        self.sub_file = os.path.join(self.iwd, "%s_%s_bucluster_submit.sub" % (self.instrument, self.channel))
         self.set_sub_file(self.sub_file)
         self.write_sub_file()
 
@@ -293,6 +382,7 @@ def write_offline_dag(seg, ini_file, cache_file, subd_intrv=3600*4, rootdir='./'
     #for channel, segl in seg_dict.iteritems():
     for channel in cfgp.sections():
         print "Channel %s, full analysis segment %s" % (channel, seg)
+        chan_sanitized = channel.replace(":","_").replace("-","_")
         subdag = CondorDAG(log=rootdir)
 
         ep_job = EPCondorJob.from_config_section(cfgp, channel, rootdir)
@@ -300,6 +390,7 @@ def write_offline_dag(seg, ini_file, cache_file, subd_intrv=3600*4, rootdir='./'
         if segments_file is not None:
             ep_job.set_segments(segments_filename=segments_file, segments_name=name)
         ep_job.do_getenv()
+        input_path = os.path.join(ep_job.get_config_attr("output-directory"), ep_job.instrument, ep_job.channel.replace(":", "/"))
         ep_job.finalize()
 
         #
@@ -310,14 +401,43 @@ def write_offline_dag(seg, ini_file, cache_file, subd_intrv=3600*4, rootdir='./'
         #for subsegl in [subdivide(segl, subd_intrv, WHITEN_TIME)]:
         for subsegl in [shift_to_overlap(subdivide(seg, subd_intrv, WHITEN_TIME), WHITEN_TIME)]:
             for subseg in subsegl:
-                node = CondorDAGNode(ep_job)
-                node.add_macro("macrogpsstart", subseg[0]) 
-                node.add_macro("macrogpsend", subseg[1]) 
-                subdag.add_node(node)
-                uberdag.add_node(node)
-                # TODO: Add bucluster and plot jobs here
+                pnode = CondorDAGNode(ep_job)
+                pnode.add_macro("macrogpsstart", subseg[0]) 
+                pnode.add_macro("macrogpsend", subseg[1]) 
+                subdag.add_node(pnode)
+                uberdag.add_node(pnode)
 
-        dagname = "excesspower_%s_%d_%d" % (channel.replace(":","_").replace("-","_"), seg[0], seg[1])
+        #
+        # Cluster the output according to the 5 digit GPS directories that
+        # should be created by excesspower
+        # FIXME: If the output format gets changed, this will break
+        # 
+        ep_bucl_job = EPBuclusterJob(channel, rootdir)
+        ep_bucl_job.do_getenv()
+        ep_bucl_job.finalize()
+        gps_group, cur_gps = 1e5, seg[0]
+
+        while cur_gps < seg[1]:
+            subdir = str(cur_gps)[:5]
+            input_path = os.path.join(input_path, subdir)
+
+            cache_name = os.path.abspath(os.path.join(rootdir, "caches/excesspower_%s_%s.cache" % (chan_sanitized, subdir)))
+
+            node = CondorDAGNode(ep_bucl_job)
+            node.set_pre_script(os.path.abspath("find_trig_files.sh"))
+            node.add_pre_script_arg(input_path)
+            node.add_pre_script_arg(cache_name)
+            node.add_macro("macroinpcache", cache_name)
+
+            node.add_parent(pnode)
+            subdag.add_node(node)
+            uberdag.add_node(node)
+
+            cur_gps += gps_group
+
+        # TODO: Add plot jobs here
+
+        dagname = "excesspower_%s_%d_%d" % (chan_sanitized, seg[0], seg[1])
         subdag.set_dag_file(dagname)
         if write_subdags:
             subdag.write_concrete_dag()
@@ -514,7 +634,9 @@ class EPOnlineCondorJob(CondorJob, object):
         self.configuration_file = config_path
         if self.configuration_file:
             self.cfg = ConfigParser()
-            self.cfg.read(self.configuration_file)
+            res = self.cfg.read(self.configuration_file)
+            if res == []:
+                raise ValueError("No configuration files read.")
         else:
             self.cfg = None
         self.add_opt("initialization-file", self.configuration_file)
