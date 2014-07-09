@@ -254,7 +254,7 @@ class EPBuclusterJob(CondorDAGJob, object):
         # Amount of memory to request
         self.mem_req = 2048
 
-        self.add_condor_cmd("request_cpu", str(self.ncpu))
+        self.add_condor_cmd("request_cpus", str(self.ncpu))
         self.add_condor_cmd("request_memory", str(self.mem_req))
 
         #
