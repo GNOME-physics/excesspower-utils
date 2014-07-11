@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 import sys
+import glob
 
 import matplotlib
 matplotlib.use("Agg")
@@ -132,7 +133,6 @@ plot_tf_map(d, "fir_data.png", data_segment, bandwidth, ts=ts)
 #
 # Find all TF maps saved
 #
-print scan_data.files
 for key in filter(lambda s: "sq_sum_series_" in s, scan_data.files):
     print key
     d = scan_data[key].T
@@ -186,12 +186,18 @@ cap1 = "Color corresponds to low frequency of channel. Height of channel color (
 fir_sec.add_table(imgtab, cap, cap1)
 
 sq_sum_data = page.add_subpage("sq_sum_data", "Energy TF Maps", "Energy TF maps")
-sq_sum_sec = sq_sum_data.add_section("sq_sum_0_2", "Energy TF maps")
-imgtab = cbcwebpage.image_glob("../sq_sum_series_level_0_dof_2.png")
-cap = "Energy map for TF resolution (NxM)"
-cap1 = "Color corresponds to energy of a given tile."
-sq_sum_sec.add_table(imgtab, cap, cap1)
-# Add additional resolutions
+i = 0
+while True:
+    band = base_band*2**(i+1)
+    # FIXME: Do this right
+    if not glob.glob("../sq_sum_series_level_%d_dof_*.png" % i):
+        break
+    sq_sum_sec = sq_sum_data.add_section("sq_sum_level_%d" % i, "Energy TF maps (bandwidth: %1.3g Hz)" % band)
+    imgtab = cbcwebpage.image_glob("../sq_sum_series_level_%d_dof_*.png" % i)
+    i += 1
+    cap = "Energy map for TF resolution (NxM)"
+    cap1 = "Color corresponds to energy of a given tile."
+    sq_sum_sec.add_table(imgtab, cap, cap1)
 
 import glob
 flist = glob.glob("../L1/FAKE/STRAIN/*/*.xml*")
@@ -227,37 +233,3 @@ if os.path.exists("../trigmap.png"):
     trig_map_sec.add_table(imgtab, cap, cap1)
 
 page.write("index")
-exit()
-
-for i, xmlsum in enumerate(xmlfiles):
-    i+=1
-
-    for sv in table.get_table(utils.load_filename(xmlsum), lsctables.SearchSummVarsTable.tableName):
-        if sv.name != "winner":
-            continue
-        winner = sv.string
-
-    page.add_subpage("round%d" % i, "Round %d" % i, "Round %d" % i)
-    sec = page.subpages["round%d" % i].add_section("r1summ", "Round %d Summary" % i)
-
-    ttable, name = cbcwebpage.wiki_table_parse(xmlsum.replace("xml.gz", "txt"))
-    sec.add_table(ttable[0], "Round summary", "Round summary")
-    sec.add_link(text="Full Result XML", href=xmlsum)
-
-    ssec = sec.add_section("r1summplot", "Round %d Summary Plot" % i)
-
-    imgtab = cbcwebpage.image_glob("*_round_%d_summary.png" % i)
-    cap = "Round %d HVeto summary" % i
-    cap1 = "Round %d HVeto summary, winner %s" % (i, winner)
-    ssec.add_table(imgtab, cap, cap1)
-
-    # TODO: Add significance drop
-
-    ssec = sec.add_section("vetotrigs", "Round %d Vetoed Triggers" % i)
-    ttable, name = cbcwebpage.wiki_table_parse(xmlsum.replace("xml.gz", "trigs"))
-    ssec.add_table(ttable[0], "Vetoed Triggers", "Vetoed Triggers")
-
-    ssec = sec.add_section("vetosegs", "Round %d Veto Segments" % i)
-    ttable, name = cbcwebpage.wiki_table_parse(xmlsum.replace("xml.gz", "segs"))
-    ssec.add_table(ttable[0], "Veto Segments", "Veto Segments")
-
