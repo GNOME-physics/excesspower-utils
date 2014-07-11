@@ -149,7 +149,7 @@ class EPCondorJob(CondorDAGJob, object):
             self.downsample_rate = downsample_rate
         self.add_opt("sample-rate", str(downsample_rate or self.sample_rate))
 
-        self.add_condor_cmd("request_cpu", str(self.ncpu))
+        self.add_condor_cmd("request_cpus", str(self.ncpu))
         self.add_condor_cmd("request_memory", str(self.mem_req))
 
     def cluster(self):
@@ -581,10 +581,10 @@ class EPOnlineCondorJob(CondorJob, object):
 
         self.sample_rate = rate
         if downsample_rate is not None:
-            self.add_opt("sample-rate", downsample_rate)
             self.downsample_rate = downsample_rate
+        self.add_opt("sample-rate", str(downsample_rate or self.sample_rate))
 
-        self.add_condor_cmd("request_cpu", str(self.ncpu))
+        self.add_condor_cmd("request_cpus", str(self.ncpu))
         self.add_condor_cmd("request_memory", str(self.mem_req))
 
     def cluster(self):
