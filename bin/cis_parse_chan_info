@@ -39,5 +39,7 @@ for resp in itertools.chain(*[cis.query(chan) for chan in opts.channel]):
         line += str(resp[field]) + " "
         if not resp.has_key(field):
             raise AttributeError("Response has no field named %s" % field)
-    print "%s%s"% (fmt, resp[field])
+
+    if line:
+        print "%s%s"% (fmt, line)
     all_resp.append(resp)
