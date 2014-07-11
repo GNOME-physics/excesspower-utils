@@ -248,13 +248,9 @@ class EPBuclusterJob(CondorDAGJob, object):
 
         self.root_dir = rootdir
 
-        # Number of cores to request for this job
-        self.ncpu = 1
-
         # Amount of memory to request
         self.mem_req = 2048
 
-        self.add_condor_cmd("request_cpus", str(self.ncpu))
         self.add_condor_cmd("request_memory", str(self.mem_req))
 
         #
@@ -268,7 +264,7 @@ class EPBuclusterJob(CondorDAGJob, object):
         self.add_opt("cluster-algorithm", "excesspower")
 
         # Look for triggers from gstlal_excesspower
-        self.add_opt("program", "gstlal_excesspoer")
+        self.add_opt("program", "gstlal_excesspower")
 
         # WHere to get input
         self.add_opt("input-cache", "$(macroinpcache)")
@@ -391,7 +387,7 @@ def write_offline_dag(seg, ini_file, cache_file, subd_intrv=3600*4, rootdir='./'
         if segments_file is not None:
             ep_job.set_segments(segments_filename=segments_file, segments_name=name)
         ep_job.do_getenv()
-        input_path = os.path.join(ep_job.get_config_attr("output-directory"), ep_job.instrument, ep_job.channel.replace(":", "/"))
+        input_path = os.path.join(ep_job.get_config_attr("output-directory"), ep_job.instrument, ep_job.channel.replace(":", "/") + "_excesspower")
         ep_job.finalize()
 
         #
