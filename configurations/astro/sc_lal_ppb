@@ -378,7 +378,7 @@ WHERE
                         self.y.append(rec_snr)
 
         def finish(self):
-                self.axes.scatter(self.x, self.y, c = self.c, s = 16)
+                self.axes.scatter(self.x, self.y, s = 16)
                 xmin, xmax = min(self.x), max(self.x)
                 ymin, ymax = min(self.y), max(self.y)
                 self.axes.set_xlim([xmin, xmax])
