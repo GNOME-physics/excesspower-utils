@@ -362,7 +362,7 @@ def shift_to_overlap(segl, shift, skip_first=True):
 # FIXME: Make loss of whitening time not hardcoded to 120 seconds -- it
 # could be much larger for lower rate channels
 WHITEN_TIME = 120  # s
-def write_offline_dag(seg, ini_file, cache_file, subd_intrv=3600*4, rootdir='./', segments_file=None, segments_name=None, write_script=False, write_subdags=False):
+def write_offline_dag(seg, ini_file, cache_file, subd_intrv=3600*4, rootdir='./', segments_file=None, segments_name=None, write_script=False, write_subdags=False, clustering=True):
     """
     Write a DAG for a set of channels with segments provided through the segment list dictionary (seg_dict). subd_intrv is the interval over which segments larger than this number will be subdivded into individual jobs. Segments of time that are directly adjacent will be overlapped so as not to lose time to whitening effects.
 		FIXME: Fixed PSD options
@@ -426,9 +426,10 @@ def write_offline_dag(seg, ini_file, cache_file, subd_intrv=3600*4, rootdir='./'
             node.add_pre_script_arg(cache_name)
             node.add_macro("macroinpcache", cache_name)
 
-            node.add_parent(pnode)
-            subdag.add_node(node)
-            uberdag.add_node(node)
+            if clustering:
+                node.add_parent(pnode)
+                subdag.add_node(node)
+                uberdag.add_node(node)
 
             cur_gps += gps_group
 
