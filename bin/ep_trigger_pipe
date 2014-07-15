@@ -14,12 +14,18 @@ parser.add_argument("--gps-end-time", type=float, dest="gps_end", help="Start ti
 parser.add_argument("--frame-cache", dest="cache_file", help="Start time of analysis.")
 parser.add_argument("--output-name", dest="output_name", default='excesspower', help="Name of DAG to write, default is 'excesspower'")
 parser.add_argument("--write-script", dest="write_script", action="store_true", help="Write script to accompany DAG.")
+parser.add_argument("--disable-clustering", dest="no_cluster", action="store_true", help="Do not perform clustering step.")
 args = parser.parse_args()
 
 run_seg = segment(args.gps_start, args.gps_end)
 
+if args.no_cluster is not None:
+	clustering = False
+else:
+	clustering = True
+
 for subsys_ini_file in args.ini_file:
-    uberdag = condor_manager.write_offline_dag(run_seg, subsys_ini_file, args.cache_file)
+    uberdag = condor_manager.write_offline_dag(run_seg, subsys_ini_file, args.cache_file, clustering=clustering)
 uberdag.set_dag_file(args.output_name)
 uberdag.write_concrete_dag()
 if args.write_script:
