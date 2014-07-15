@@ -1,0 +1,123 @@
+#!/usr/bin/env python
+
+import os
+import sys
+
+import numpy
+
+import pygtk
+pygtk.require("2.0")
+import gobject
+gobject.threads_init()
+import pygst
+pygst.require("0.10")
+
+from glue.ligolw import utils, lsctables, table, ligolw
+
+import gst
+
+#
+# Default values
+#
+rate = 16384
+df = 1/4.0
+fhigh = 8192
+
+sbtable = table.get_table(utils.load_filename(sys.argv[1]), lsctables.SnglBurstTable.tableName)[:256]
+#xmldoc = ep.create_bank_xml(flow=16, fhigh=8000, band=4, duration=1/8.0, level=0, ndof=1, frequency_overlap=0, detector="H1")
+
+# Stupid content handlers -- invoke them here, after reading XML
+from gstlal import pipeparts
+import gstlal.excesspower as ep
+from gstlal.epparts import EPHandler
+
+pipeline = gst.Pipeline("mmtest")
+mainloop = gobject.MainLoop()
+
+#
+# Fake PSD and correlation
+#
+
+handler = EPHandler(mainloop, pipeline)
+psd = handler.build_default_psd(rate, df, fhigh)
+corr = handler.build_default_correlation(rate)
+
+#
+# Data source
+#
+
+# Gaussian noise
+head = pipeparts.mkaudiotestsrc(pipeline, wave=9, volume=1.0, num_buffers=100000)
+head = pipeparts.mkcapsfilter(pipeline, head, "audio/x-raw-float,width=64,channels=1,rate=16384")
+head = pipeparts.mkprogressreport(pipeline, head, "data source")
+
+#
+# Build FIR bank
+#
+
+print "Generating filter bank..."
+filter_bank, freq_filters = ep.build_filter_from_xml(psd, sbtable, corr = corr)
+print "...done."
+
+#
+# FIR bank
+#
+
+head = firbank = pipeparts.mkfirbank(pipeline, head, block_stride=rate, time_domain=False)
+firbank.set_property("fir_matrix", filter_bank)
+latency = len(firbank.get_property("fir_matrix")[0])/2+1
+firbank.set_property("latency", latency)
+
+head = pipeparts.mkprogressreport(pipeline, head, "FIR bank")
+
+tee = pipeparts.mktee(pipeline, head)
+
+#
+# Divide by the appropriate normalization
+#
+nlevels = 8
+tails = []
+for i in range(nlevels):
+    head = pipeparts.mkqueue(pipeline, tee)
+    print "Calculating matrix mixer element, level %d" % i
+    mu_sq = ep.build_wide_filter_norm(corr, freq_filters, level=i, frequency_overlap=0)
+    cmatrix = ep.build_chan_matrix(nchannels = len(filter_bank), frequency_overlap = 0, up_factor = i, norm = mu_sq)
+    mu_sq = 1.0/numpy.sqrt(mu_sq[0])
+    #import pdb; pdb.set_trace()
+    print "Calculated matrix mixer element = %f" % mu_sq
+    
+    head = pipeparts.mkmatrixmixer(pipeline, head)
+    head.set_property("matrix", cmatrix)
+    head = pipeparts.mkprogressreport(pipeline, head, "matrix level %d" % i)
+    pipeparts.mkfilesink(pipeline, head, "tiles_%d.dat" % i)
+
+#
+# Reintegrate the streams
+#
+
+"""
+head = funnel = pipeparts.mkgeneric(pipeline, None, "funnel")
+
+i = 0
+for tail in tails:
+    pipeparts.src_deferred_link(tail, "src%d" % i, funnel.get_request_pad("sink%d" % i))
+    i += 1
+
+pipeparts.mkfilesink(pipeline, head, "tiles.dat")
+"""
+
+#
+# Run
+#
+if pipeline.set_state( gst.STATE_PLAYING ) == gst.STATE_CHANGE_FAILURE:
+    raise RuntimeError( "pipeline failed to enter PLAYING state" )
+def write_pipeline_graph():
+    pipeparts.write_dump_dot(pipeline, "gstlal_excesspower", verbose = True)
+    gst.DEBUG_BIN_TO_DOT_FILE( pipeline,
+        gst.DEBUG_GRAPH_SHOW_ALL,
+        "gstlal_excesspower"
+    )
+if os.environ.has_key("GST_DEBUG_DUMP_DOT_DIR"):
+    write_pipeline_graph()
+exit()
+mainloop.run()
