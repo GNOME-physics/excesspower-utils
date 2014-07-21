@@ -375,7 +375,7 @@ WHERE
                         inj_snr = (values[3])**.5
 			inj_hrss, rec_hrss, bandwidth, duration = values[0], values[23], values[10], values[16]
                         self.x.append(inj_snr)
-                        self.y.append(rec_snr)
+                        self.y.append(math.sqrt(rec_snr))
 
         def finish(self):
                 self.axes.scatter(self.x, self.y, s = 16)
@@ -494,7 +494,9 @@ class RecoveredVsInjectedhrss(object):
 
 	def add_contents(self, contents):
 		offsetvectors = contents.time_slide_table.as_dict()
-		hrss_vals = []
+		rec_hrss_vals = []
+		inj_hrss_vals = []
+		waveform_vals = []
 		ms_snr_vals = []
 		for values in contents.connection.cursor().execute("""
 SELECT
@@ -522,19 +524,36 @@ WHERE
                         sim = contents.sim_burst_table.row_from_cols(values)
 			#print sim.peak_frequency
                         freq_rec, hrss_rec = values[20], values[21]
-                        hrss_vals.append((self.amplitude_func(sim, self.instrument, offsetvectors[sim.time_slide_id]), hrss_rec))
+                        rec_hrss_vals.append(hrss_rec)
+                        inj_hrss_vals.append(values[0])
+                        waveform_vals.append((sim.waveform, freq_rec, values[7], values[1], values[16], values[23]))
 			print "inj freq, rec freq, waveform", values[12], freq_rec, sim.waveform
-			print "injected hrss = ", self.amplitude_func(sim, self.instrument, offsetvectors[sim.time_slide_id])
+			print "detected hrss = ", self.amplitude_func(sim, self.instrument, offsetvectors[sim.time_slide_id])
 			print "recovered hrss = ", hrss_rec
 			print "sngl_burst.bandwidth, sngl_burst.duration = ", values[23], values[24]
 			print "ms_snr = ", values[22]
 			ms_snr_vals.append((values[1], values[3], values[22], values[23], values[24], values[25], values[26], values[27]))
 			self.matches += 1
 			rec_snr = values[22]
-                        self.x.append(self.amplitude_func(sim, self.instrument, offsetvectors[sim.time_slide_id]))
-                        self.y.append(hrss_rec)
-                        self.c.append(math.sqrt(rec_snr))
-		print ms_snr_vals
+			if sim.waveform == "SineGaussian":
+                        	self.x.append(self.amplitude_func(sim, self.instrument, offsetvectors[sim.time_slide_id]))
+                       		self.y.append(hrss_rec)
+                        	self.c.append(math.sqrt(rec_snr))
+			#self.x.append(self.amplitude_func(sim, self.instrument, offsetvectors[sim.time_slide_id]))
+                        #self.y.append(hrss_rec)
+                        #self.c.append(math.sqrt(rec_snr))
+		#print ms_snr_vals
+		rec_hrss = numpy.array(rec_hrss_vals)
+		inj_hrss = numpy.array(inj_hrss_vals)
+		sim_ids = numpy.array([myitem[2] for myitem in waveform_vals])
+		durs = numpy.array([myitem[4] for myitem in waveform_vals])
+		freqs = numpy.array([myitem[1] for myitem in waveform_vals])
+		bands = numpy.array([myitem[5] for myitem in waveform_vals])
+		timegeos = numpy.array([myitem[3] for myitem in waveform_vals])
+		waveforms = numpy.array([myitem[0] for myitem in waveform_vals])
+		inj_data = numpy.array(zip(rec_hrss, inj_hrss, durs, freqs, bands, timegeos, sim_ids, waveforms), dtype=[('rec_hrss', float), ('inj_hrss', float), ('durs', float), ('freqs', float),('bands', float),('timegeos', float), ('sim_ids', 'S28'),('waveforms', 'S12')])
+		numpy.savetxt('waveform_hrss_data.txt', inj_data, fmt=["%g",]*5 + ["%10.9f"]  + ["%s"]*2)
+		#numpy.savetxt('waveform_hrss_data.txt', (rec_hrss_vals, inj_hrss_vals, waveform_vals), fmt=('%s'))
 		numpy.savetxt('ms_snr.txt', ms_snr_vals)
 
 
