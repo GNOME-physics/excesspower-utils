@@ -1,5 +1,5 @@
 START=1000000000
-STOP=1000086400
+STOP=1000604800
 DUR=$(shell python -c "print ${STOP}-${START}")
 INJ_OFFSET=10
 SG_START=$(shell python -c "print ${START}+${INJ_OFFSET}")
@@ -48,7 +48,7 @@ astroInjections_rescaled_gaussian.xml.gz: astroInjections.xml.gz
 		--rescale-snr-normal-stddev 2  \
 		--rescale-snr-normal-mean 8  \
 		 $<
-	mv snr_rescaled.xml.gz $@
+	ligolw_add -v -o $@ snr_rescaled.xml.gz zero_lag.xml.gz 
 
 astroInjections_rescaled_uniform.xml.gz: astroInjections.xml.gz
 	../../bin/ligolw_inj_snr  \
@@ -57,7 +57,7 @@ astroInjections_rescaled_uniform.xml.gz: astroInjections.xml.gz
 		--rescale-snr-uniform-min 3  \
 		--rescale-snr-uniform-max 50  \
 		 $<
-	mv snr_rescaled.xml.gz $@
+	ligolw_add -v -o $@ snr_rescaled.xml.gz zero_lag.xml.gz 
 
 astroInjections_btlwnb.xml.gz:
 	../../bin/ligolw_binj \
@@ -72,11 +72,11 @@ astroInjections_btlwnb.xml.gz:
     	--wnb-min-egw 1e-7 \
     	--wnb-max-egw 1e-2 \
     	--wnb-min-bandwidth 50 \
-    	--wnb-max-bandwidth 1500 \
+    	--wnb-max-bandwidth 1000 \
     	--wnb-min-duration 0.001 \
     	--wnb-max-duration 0.02 \
     	--wnb-min-frequency 65 \
-    	--wnb-max-frequency 4000 
+    	--wnb-max-frequency 3000 
 
 astroInjections_sg.xml.gz:
 	../../bin/ligolw_binj \
@@ -92,7 +92,7 @@ astroInjections_sg.xml.gz:
     	--sg-min-q 3 \
     	--sg-max-q 9 \
     	--sg-min-f 40 \
-    	--sg-max-f 4000 \
+    	--sg-max-f 3000 \
     	--sg-min-hrss 1e-24 \
     	--sg-max-hrss 1e-20
 
