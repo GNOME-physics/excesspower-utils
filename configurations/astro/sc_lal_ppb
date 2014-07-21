@@ -44,10 +44,14 @@ from glue.ligolw import dbtables
 from glue.ligolw import utils
 from pylal import git_version
 from pylal import rate
+from pylal import date
+from pylal import inject
 from pylal import SimBurstUtils
 from pylal import SnglBurstUtils
 from pylal.xlal.datatypes.ligotimegps import LIGOTimeGPS
 
+import lalburst
+import lal
 
 dbtables.lsctables.LIGOTimeGPS = LIGOTimeGPS
 
@@ -86,7 +90,7 @@ def parse_command_line():
 		options.amplitude_func = lambda sim, instrument, offsetvector: sim.hrss
 		options.amplitude_lbl = r"$h_{\mathrm{rss}}$"
 	elif options.amplitude_func == "hrssdet":
-		options.amplitude_func = SimBurstUtils.hrss_in_instrument
+		options.amplitude_func = hrss_in_instrument
 		options.amplitude_lbl = r"$h_{\mathrm{rss}}^{\mathrm{det}}$"
 	elif options.amplitude_func == "E":
 		options.amplitude_func = lambda sim, instrument, offsetvector: sim.egw_over_rsquared
@@ -115,6 +119,45 @@ def parse_command_line():
 
 	return options, filenames
 
+#
+# =============================================================================
+#
+#                                 Utility
+#
+# =============================================================================
+#
+
+def hrss_in_instrument(sim, instrument, offsetvector):
+    if sim.waveform == "SineGaussian":
+        return SimBurstUtils.hrss_in_instrument(sim, instrument, offsetvector)
+
+    def copy_sim_burst(sim_row):
+        sim_out = lalburst.CreateSimBurst()
+        for attr in list(set(dir(sim_row)) & set(dir(sim_out))):
+            if "__" in attr:
+                continue
+            setattr(sim_out, attr, getattr(attr, sim_row))
+        # These are handled slightly differently
+        sim_out = lal.LIGOTimeGPS(sim_row.time_geocent_gps, sim_row.time_geocent_gps_ns)
+        sim_out.simulation_id = int(sim_out.simulation_id)
+        sim_out.process_id = int(sim_out.process_id)
+        return sim_out
+
+    fplus, fcross = inject.XLALComputeDetAMResponse(
+        inject.cached_detector[inject.prefix_to_name[instrument]].response,
+        sim.ra,
+        sim.dec,
+        sim.psi,
+        date.XLALGreenwichMeanSiderealTime(time_at_instrument(sim, instrument, offsetvector))
+    )
+
+    hp, hx = lalburst.GenerateSimBurst(copy_sim_burst(sim), 1.0/16384)
+    hp.data.data *= fplus
+    hx.data.data *= fcross
+    hrss_sq = lalburst.MeasureHrss(hp, hx)**2
+    hrss_sq += 2*sum(hp.data, hx.data)*hp.deltaT
+
+    return math.sqrt(hrss_sq)
 
 #
 # =============================================================================
