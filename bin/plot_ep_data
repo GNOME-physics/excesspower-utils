@@ -12,21 +12,55 @@ import numpy
 
 from glue.segments import segment
 
-def plot_tf_map(data, fname, data_segment, bandwidth, interp="nearest", ts=None):
+def plot_tf_map(data, fname, data_segment, bandwidth, logscale="y", interp="nearest", ts=None, transform=None):
     pyplot.figure(2)
     pyplot.clf()
-    print fname, numpy.abs(data).max()
-    #data = data.T
-    #idx0, idx1 = len(data)/2-15, len(data)/2+15
-    #data = data[idx0:idx1].T
+    #print fname, numpy.abs(data).max()
     if ts is not None:
         data_segment = (ts[0], ts[-1] + ts[1] - ts[0])
-    pyplot.imshow(data[::-1], extent=(0, data_segment[1]-data_segment[0], bandwidth[0], bandwidth[1]), interpolation=interp, aspect='equal')
 
-    # Hack to force equal aspect
+    if logscale is None:
+        if transform:
+            pyplot.imshow(transform(data[::-1]), extent=(0, data_segment[1]-data_segment[0], bandwidth[0], bandwidth[-1]), interpolation=interp, aspect='equal')
+						
+            # I can't get this to work. I suspect it has something to do with
+            # the plot coordinates vs the data, but nothing I do seems to make
+            # a difference.
+            """
+            ts = numpy.linspace(data_segment[0], data_segment[1], len(data[0]))
+            freq = numpy.log10(numpy.linspace(bandwidth[0], bandwidth[1], len(data)))
+            from matplotlib.image import NonUniformImage
+            ax = pyplot.gca()
+            im = NonUniformImage(ax, extent=(data_segment[0], data_segment[1], freq[0], freq[-1]), interpolation='nearest')
+            im.set_data(ts, freq, data)
+            ax.images.append(im)
+            """
+        else:
+            pyplot.imshow(data[::-1], extent=(0, data_segment[1]-data_segment[0], bandwidth[0], bandwidth[-1]), interpolation=interp, aspect='equal')
+
+        # Hack to force equal aspect
+        ax = pyplot.gca()
+        ex = ax.get_images()[0].get_extent()
+        ax.set_aspect(abs((ex[1]-ex[0])/(ex[3]-ex[2])))
+
+    else:
+        ts = numpy.linspace(data_segment[0], data_segment[1], len(data[0]))-data_segment[0]
+        freq = numpy.linspace(bandwidth[0], bandwidth[-1], len(data))
+        if transform:
+            pyplot.pcolormesh(ts, freq, transform(data))
+        else:
+            pyplot.pcolormesh(ts, freq, data)
+
+        if 'y' in logscale:
+            ax = pyplot.gca()
+            ax.set_yscale('log')
+        if 'x' in logscale:
+            ax = pyplot.gca()
+            ax.set_xscale('log')
+
     ax = pyplot.gca()
-    ex = ax.get_images()[0].get_extent()
-    ax.set_aspect(abs((ex[1]-ex[0])/(ex[3]-ex[2])))
+    ax.set_xlim(0, data_segment[1]-data_segment[0])
+    ax.set_ylim(bandwidth[0], bandwidth[-1])
 
     pyplot.xlabel("time (s), relative to %10.5f" % data_segment[0])
     pyplot.ylabel("frequency (Hz)")
@@ -200,7 +234,7 @@ while True:
     sq_sum_sec.add_table(imgtab, cap, cap1)
 
 import glob
-flist = glob.glob("../L1/FAKE/STRAIN/*/*.xml*")
+flist = glob.glob("../L1-*.xml.gz")
 if flist:
     trig_info_data = page.add_subpage("trig_info_data", "Trigger Table", "Trigger Info")
 
@@ -213,11 +247,13 @@ if len(flist) > 1:
 
 trig_info_sec = trig_info_data.add_section("trig_info", "Trigger Table")
 
+"""
 with open("triggers.txt", "w") as fout:
     trig_table = print_tables.print_tables(xmldoc, fout, "wiki", tableList=[lsctables.SnglBurstTable.tableName], title="SnglBurst triggers", columnList=["channel", "snr", "peak_time", "peak_time_ns", "duration", "central_freq", "bandwidth", "chisq_dof"])
 ttable, name = cbcwebpage.wiki_table_parse("triggers.txt")
 
 trig_info_sec.add_table(ttable[0], "Trigger table", "Table of trigger information. Channel indicates the channel analyzed, peak_time and peak_time_ns are the seconds and nanosecond field of the central time for each tile, duration is the width of the tile in the time domain, central frequency is the center frequency of the tile, bandwidth is the width of the tile in the frequency domain, and chisq_dof is the number of degrees of freedom present in that tile.")
+"""
 
 trig_info_sec.div("<br />Full Results XML<br />")
 for file in flist:
