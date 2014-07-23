@@ -12,7 +12,7 @@ import numpy
 
 from glue.segments import segment
 
-def plot_tf_map(data, fname, data_segment, bandwidth, logscale="y", interp="nearest", ts=None, transform=None):
+def plot_tf_map(data, fname, data_segment, bandwidth, logscale=None, interp="nearest", ts=None, transform=None):
     pyplot.figure(2)
     pyplot.clf()
     #print fname, numpy.abs(data).max()
