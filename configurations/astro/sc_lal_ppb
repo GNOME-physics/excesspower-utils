@@ -50,8 +50,9 @@ from pylal import SimBurstUtils
 from pylal import SnglBurstUtils
 from pylal.xlal.datatypes.ligotimegps import LIGOTimeGPS
 
-import lalburst
 import lal
+import lalsimulation
+import lalburst
 
 dbtables.lsctables.LIGOTimeGPS = LIGOTimeGPS
 
@@ -127,20 +128,24 @@ def parse_command_line():
 # =============================================================================
 #
 
-def hrss_in_instrument(sim, instrument, offsetvector):
+def hrss_in_instrument(sim, instrument, offsetvector=None):
     if sim.waveform == "SineGaussian":
         return SimBurstUtils.hrss_in_instrument(sim, instrument, offsetvector)
 
     def copy_sim_burst(sim_row):
         sim_out = lalburst.CreateSimBurst()
         for attr in list(set(dir(sim_row)) & set(dir(sim_out))):
-            if "__" in attr:
-                continue
-            setattr(sim_out, attr, getattr(attr, sim_row))
+		if "__" in attr or "_id" in attr:
+                	continue
+		if type(getattr(sim_row,attr)) == unicode:
+			setattr(sim_out,attr, str(getattr(sim_row, attr) ))
+		else:
+			setattr(sim_out, attr, getattr(sim_row,attr))
         # These are handled slightly differently
-        sim_out = lal.LIGOTimeGPS(sim_row.time_geocent_gps, sim_row.time_geocent_gps_ns)
-        sim_out.simulation_id = int(sim_out.simulation_id)
-        sim_out.process_id = int(sim_out.process_id)
+        sim_out.time_geocent_gps = lal.LIGOTimeGPS(sim_row.time_geocent_gps, sim_row.time_geocent_gps_ns)
+        sim_out.time_slide_id = int(sim_row.time_slide_id)
+        sim_out.process_id = int(sim_row.process_id)
+        sim_out.simulation_id = int(sim_row.simulation_id)
         return sim_out
 
     fplus, fcross = inject.XLALComputeDetAMResponse(
@@ -148,14 +153,15 @@ def hrss_in_instrument(sim, instrument, offsetvector):
         sim.ra,
         sim.dec,
         sim.psi,
-        date.XLALGreenwichMeanSiderealTime(time_at_instrument(sim, instrument, offsetvector))
+        date.XLALGreenwichMeanSiderealTime(SimBurstUtils.time_at_instrument(sim, instrument, offsetvector))
     )
 
+    #import pdb; pdb.set_trace()
     hp, hx = lalburst.GenerateSimBurst(copy_sim_burst(sim), 1.0/16384)
     hp.data.data *= fplus
     hx.data.data *= fcross
-    hrss_sq = lalburst.MeasureHrss(hp, hx)**2
-    hrss_sq += 2*sum(hp.data, hx.data)*hp.deltaT
+    hrss_sq = lalsimulation.MeasureHrss(hp, hx)**2
+    hrss_sq += 2*sum(hp.data.data*hx.data.data)*hp.deltaT
 
     return math.sqrt(hrss_sq)
 
@@ -565,26 +571,21 @@ WHERE
 		""", (self.instrument,)):
 			#import pdb; pdb.set_trace()
                         sim = contents.sim_burst_table.row_from_cols(values)
-			#print sim.peak_frequency
                         freq_rec, hrss_rec = values[20], values[21]
                         rec_hrss_vals.append(hrss_rec)
                         inj_hrss_vals.append(values[0])
                         waveform_vals.append((sim.waveform, freq_rec, values[7], values[1], values[16], values[23]))
-			print "inj freq, rec freq, waveform", values[12], freq_rec, sim.waveform
-			print "detected hrss = ", self.amplitude_func(sim, self.instrument, offsetvectors[sim.time_slide_id])
-			print "recovered hrss = ", hrss_rec
-			print "sngl_burst.bandwidth, sngl_burst.duration = ", values[23], values[24]
-			print "ms_snr = ", values[22]
-			ms_snr_vals.append((values[1], values[3], values[22], values[23], values[24], values[25], values[26], values[27]))
+			#print "inj freq, rec freq, waveform", values[12], freq_rec, sim.waveform
+			#print "detected hrss = ", self.amplitude_func(sim, self.instrument, offsetvectors[sim.time_slide_id])
+			#print "recovered hrss = ", hrss_rec
+			#print "sngl_burst.bandwidth, sngl_burst.duration = ", values[23], values[24]
+			#print "ms_snr = ", values[22]
+			#ms_snr_vals.append((values[1], values[3], values[22], values[23], values[24], values[25], values[26], values[27]))
 			self.matches += 1
 			rec_snr = values[22]
-			if sim.waveform == "SineGaussian":
-                        	self.x.append(self.amplitude_func(sim, self.instrument, offsetvectors[sim.time_slide_id]))
-                       		self.y.append(hrss_rec)
-                        	self.c.append(math.sqrt(rec_snr))
-			#self.x.append(self.amplitude_func(sim, self.instrument, offsetvectors[sim.time_slide_id]))
-                        #self.y.append(hrss_rec)
-                        #self.c.append(math.sqrt(rec_snr))
+			self.x.append(self.amplitude_func(sim, self.instrument, offsetvectors[sim.time_slide_id]))
+                        self.y.append(hrss_rec)
+                        self.c.append(math.sqrt(rec_snr))
 		#print ms_snr_vals
 		rec_hrss = numpy.array(rec_hrss_vals)
 		inj_hrss = numpy.array(inj_hrss_vals)
