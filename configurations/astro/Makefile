@@ -16,6 +16,11 @@ LIGO_FRAME_DURATION=64 # s
 LIGO_FRAME_DURATION_COMB=64 # s
 LIGO_N_FRAMES=1
 
+DATE=$(shell date +"%Y_%m_%d")
+GIT_REV=$(shell git rev-parse HEAD)
+INSTALL_DIR=/home/pankow/excesspower/etg_tests/
+TAG=one_week
+
 all: aligo_inject_combined.cache plots
 
 #
@@ -205,6 +210,21 @@ V1_PSD_measured.xml.gz: V1_aligo_noise.cache
 
 V1_PSD_measured.png: V1_PSD_measured.xml.gz
 	./plot_psds_single V1 $@ $<
+
+install: aligo_noise.cache aligo_inject.cache aligo_inject_combined.cache ${INJ_XML}
+	$(eval INSTALL_DEST=${INSTALL_DIR}/${TAG}_${GIT_REV}_${DATE})
+	mkdir -p ${INSTALL_DEST}
+	mv aligo_noise_mdc aligo_inject_mdc aligo_inject_combined ${INSTALL_DEST}
+	cp *_PSD_measured.* ${INSTALL_DEST}
+	cp ${INJ_XML} ${INSTALL_DEST}
+	find ${INSTALL_DEST}/aligo_inject_combined/ -name "H-*.gwf" | lalapps_path2cache > ${INSTALL_DEST}/H1_combined.cache
+	find ${INSTALL_DEST}/aligo_inject_combined/ -name "L-*.gwf" | lalapps_path2cache > ${INSTALL_DEST}/L1_combined.cache
+	find ${INSTALL_DEST}/aligo_inject_combined/ -name "V-*.gwf" | lalapps_path2cache > ${INSTALL_DEST}/V1_combined.cache
+	cat ${INSTALL_DEST}/{H,L,V}1_combined.cache > ${INSTALL_DEST}/aligo_inject_combined.cache
+	find ${INSTALL_DEST}/aligo_noise_mdc/ -name "H-*.gwf" | lalapps_path2cache > ${INSTALL_DEST}/H1_noise.cache
+	find ${INSTALL_DEST}/aligo_noise_mdc/ -name "L-*.gwf" | lalapps_path2cache > ${INSTALL_DEST}/L1_noise.cache
+	find ${INSTALL_DEST}/aligo_noise_mdc/ -name "V-*.gwf" | lalapps_path2cache > ${INSTALL_DEST}/V1_noise.cache
+	cat ${INSTALL_DEST}/{H,L,V}1_noise.cache > ${INSTALL_DEST}/aligo_noise.cache
 
 clean:
 	rm -rf *.cache
