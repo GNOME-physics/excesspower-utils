@@ -19,7 +19,7 @@ args = parser.parse_args()
 
 run_seg = segment(args.gps_start, args.gps_end)
 
-if args.no_cluster is not None:
+if args.no_cluster:
 	clustering = False
 else:
 	clustering = True
