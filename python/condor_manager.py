@@ -416,13 +416,13 @@ def write_offline_dag(seg, ini_file, cache_file, subd_intrv=3600*4, rootdir='./'
 
         while cur_gps < seg[1]:
             subdir = str(cur_gps)[:5]
-            input_path = os.path.join(input_path, subdir)
+            cache_path = os.path.join(input_path, subdir)
 
             cache_name = os.path.abspath(os.path.join(rootdir, "caches/excesspower_%s_%s.cache" % (chan_sanitized, subdir)))
 
             node = CondorDAGNode(ep_bucl_job)
             node.set_pre_script(os.path.abspath("find_trig_files.sh"))
-            node.add_pre_script_arg(input_path)
+            node.add_pre_script_arg(cache_path)
             node.add_pre_script_arg(cache_name)
             node.add_macro("macroinpcache", cache_name)
 
