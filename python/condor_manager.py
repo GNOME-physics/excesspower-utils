@@ -395,6 +395,7 @@ def write_offline_dag(seg, ini_file, cache_file, subd_intrv=3600*4, rootdir='./'
         # the entire segment would be thrown away due to whitener effets
         # NOTE: This won't be a problem with a fix-psd option
         # 
+        analysis_segments = {}
         #for subsegl in [subdivide(segl, subd_intrv, WHITEN_TIME)]:
         for subsegl in [shift_to_overlap(subdivide(seg, subd_intrv, WHITEN_TIME), WHITEN_TIME)]:
             for subseg in subsegl:
@@ -403,6 +404,7 @@ def write_offline_dag(seg, ini_file, cache_file, subd_intrv=3600*4, rootdir='./'
                 pnode.add_macro("macrogpsend", subseg[1]) 
                 subdag.add_node(pnode)
                 uberdag.add_node(pnode)
+                analysis_segments[subseg] = pnode
 
         #
         # Cluster the output according to the 5 digit GPS directories that
@@ -416,6 +418,7 @@ def write_offline_dag(seg, ini_file, cache_file, subd_intrv=3600*4, rootdir='./'
 
         while cur_gps < seg[1]:
             subdir = str(cur_gps)[:5]
+            gps_seg = segment(cur_gps, cur_gps+1e5)
             cache_path = os.path.join(input_path, subdir)
 
             cache_name = os.path.abspath(os.path.join(rootdir, "caches/excesspower_%s_%s.cache" % (chan_sanitized, subdir)))
@@ -427,9 +430,14 @@ def write_offline_dag(seg, ini_file, cache_file, subd_intrv=3600*4, rootdir='./'
             node.add_macro("macroinpcache", cache_name)
 
             if clustering:
-                node.add_parent(pnode)
-                subdag.add_node(node)
-                uberdag.add_node(node)
+                for aseg, anode in analysis_segments.iteritems():
+                    try:
+                        gps_seg & aseg
+                        node.add_parent(anode)
+                        subdag.add_node(node)
+                        uberdag.add_node(node)
+                    except ValueError:
+                        pass
 
             cur_gps += gps_group
 
