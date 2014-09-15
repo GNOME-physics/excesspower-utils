@@ -482,6 +482,11 @@ class EPOnlineCondorJob(CondorJob, object):
             ds_rate = None
         manager.set_sample_rate(sample_rate, ds_rate)
 
+        if cfgp.has_option(sec, "shm_part_name"):
+				    manager.set_shm_partition(cfgp.get(sec, "shm_part_name"))
+        else:
+				    manager.set_shm_partition(None)
+
         odc_chan, on_bits, off_bits = None, None, None
         if cfgp.has_option(sec, "dq_channel"):
             odc_chan = cfgp.get(sec, "dq_channel")
@@ -538,7 +543,7 @@ class EPOnlineCondorJob(CondorJob, object):
         self.add_opt("data-source", "lvshm")
 
         # Enable some basic statistical monitoring
-        self.add_arg("enable-channel-monitoring")
+        self.add_opt("enable-channel-monitoring", "")
 
         # Please be verbose, thank you!
         self.add_opt("verbose", "")
@@ -628,16 +633,16 @@ class EPOnlineCondorJob(CondorJob, object):
         self.on_bits, self.off_bits = on_bits, off_bits
         self.add_opt("dq-channel", "%s=%s" % (self.instrument, self.dq_channel))
         if self.on_bits is not None:
-            self.add_opt("state-vector-on-bits", "0x%x" % self.on_bits)
+            self.add_opt("state-vector-on-bits", "%s=0x%x" % (self.instrument, self.on_bits))
         if self.off_bits is not None:
-            self.add_opt("state-vector-off-bits", "0x%x" % self.off_bits)
+            self.add_opt("state-vector-off-bits", "%s=0x%x" % (self.instrument, self.off_bits))
 
     def set_shm_partition(self, shm_part_name):
         """
         Set the name of the shared memory partition from which to draw data. Check with smlist command line utility, usually something like LHO_Data or LLO_Data.
         """
         self.shm_part_name = shm_part_name
-        self.add_opt("shared-memory-partition", "%s=%s" (self.instrument, self.shm_part_name))
+        self.add_opt("shared-memory-partition", "%s=%s" % (self.instrument, self.shm_part_name))
 
     def set_config_file(self, config_path):
         """
@@ -732,7 +737,7 @@ def write_subsystem_config(managers, path, append=True):
         sec = mngr.full_name()
         cfgp.add_section(sec)
         #for a in ["instrument", "sample_rate", "configuration_file", "dq_channel", "on_bits", "off_bits", "priority"]:
-        for a in ["instrument", "sample_rate", "configuration_file", "dq_channel", "on_bits", "off_bits"]:
+        for a in ["instrument", "sample_rate", "configuration_file", "dq_channel", "on_bits", "off_bits", "shm_part_name"]:
             val = getattr(mngr, a)
             cfgp.set(sec, a, "" if val is None else val)
 
