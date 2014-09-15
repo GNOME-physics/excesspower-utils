@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 import sys
 import os
+import re
 from Queue import PriorityQueue
 from ConfigParser import ConfigParser
 
@@ -73,6 +74,7 @@ Type ep_manager help [command] to get specific help.
 
 optp = OptionParser(usage=help_banner)
 optp.add_option("-c", "--channel", action="append", help="Add this channel to the list for a given command action, if applicable.")
+optp.add_option("-C", "--channel-regex", action="append", help="Add this channel regular expression to append to the list for a given command action, if applicable.")
 optp.add_option("-e", "--entry", action="append", help="Get this entry of the configuration. Only valid for [set] and [status]")
 optp.add_option("-n", "--dry-run", action="store_true", help="Do not actually commit changes.")
 optp.add_option("-r", "--root-directory", help="Use this as the root directory for the processes.")
@@ -91,8 +93,9 @@ channels, chan_repo = [], None
 if is_already_repo(rootdir):
     chan_repo = git.Repo(rootdir)
     import glob
-    print glob.glob(chan_repo.working_dir + "/*/*.ini")
+    #print glob.glob(chan_repo.working_dir + "/*/*.ini")
     #for cfgf in glob.glob(chan_repo.working_dir + "/*.ini"):
+    # FIXME: Walk the git index, not the filesystem
     for cfgf in glob.glob(chan_repo.working_dir + "/*/*.ini"):
         cfgp = ConfigParser()
         cfgp.read(cfgf)
@@ -101,12 +104,14 @@ if is_already_repo(rootdir):
             pqueue.put(pq.get_nowait())
         chan_list.extend(cl)
 
-    if opts.channel is None:
+    if opts.channel is None and opts.channel_regex is None:
         channels = chan_list
     else:
-        # FIXME: Warn if not present
-        channels = filter(lambda c: c.full_name() in opts.channel, chan_list)
-        if len(channels) != len(opts.channel):
+        for reg in opts.channel_regex or []:
+            channels.extend(filter(lambda c: re.search(reg, c.full_name()), chan_list))
+        if opts.channel:
+            channels += filter(lambda c: c.full_name() in opts.channel, chan_list)
+        if not opts.channel_regex and len(channels) != len(opts.channel):
             print >>sys.stderr, "Warning, could not find channels in config: %s" % ", ".join(list(set(opts.channel)-set(channels)))
 
 cmd = arg[0]
