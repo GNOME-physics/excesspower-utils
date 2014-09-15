@@ -477,7 +477,9 @@ class EPOnlineCondorJob(CondorJob, object):
 
         sample_rate = cfgp.getint(sec, "sample_rate")
         if cfgp.has_option(sec, "downsample_rate"):
-            ds_rate = cfgp.getint(sec, "downsample_rate")
+            ds_rate = cfgp.get(sec, "downsample_rate")
+        if ds_rate:
+            ds_rate = int(ds_rate)
         else:
             ds_rate = None
         manager.set_sample_rate(sample_rate, ds_rate)
@@ -602,7 +604,7 @@ class EPOnlineCondorJob(CondorJob, object):
         self.sample_rate = rate
         if downsample_rate is not None:
             self.downsample_rate = downsample_rate
-        self.add_opt("sample-rate", str(downsample_rate or self.sample_rate))
+        self.add_opt("sample-rate", str(self.downsample_rate or self.sample_rate))
 
         self.add_condor_cmd("request_cpus", str(self.ncpu))
         self.add_condor_cmd("request_memory", str(self.mem_req))
@@ -737,7 +739,7 @@ def write_subsystem_config(managers, path, append=True):
         sec = mngr.full_name()
         cfgp.add_section(sec)
         #for a in ["instrument", "sample_rate", "configuration_file", "dq_channel", "on_bits", "off_bits", "priority"]:
-        for a in ["instrument", "sample_rate", "configuration_file", "dq_channel", "on_bits", "off_bits", "shm_part_name"]:
+        for a in ["instrument", "sample_rate", "downsample_rate", "configuration_file", "dq_channel", "on_bits", "off_bits", "shm_part_name"]:#, "priority"]:
             val = getattr(mngr, a)
             cfgp.set(sec, a, "" if val is None else val)
 
