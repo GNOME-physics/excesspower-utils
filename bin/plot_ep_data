@@ -103,13 +103,13 @@ data_segment = segment(map(float, scan_data["segment"]))
 bandwidth = segment(map(float, scan_data["bandwidth"][:2]))
 base_band = scan_data["bandwidth"][-1]
 
+print "Data segment: %s\nsearch band: %s (%f Hz channels)" % (str(data_segment), str(bandwidth), base_band)
+
 # Readjust upper frequency
 band = abs(bandwidth)
 band /= base_band
-highf = int(band)*base_band
-bandwidth = segment(bandwidth[0], highf)
-
-print "Data segment: %s\nsearch band: %s (%f Hz channels)" % (str(data_segment), str(bandwidth), base_band)
+highf = bandwidth[0] + int(band)*base_band
+bandwidth = segment(bandwidth[0]+base_band/2, highf-base_band/2)
 
 ts, d = scan_data["time_series"].T
 ts -= data_segment[0]
