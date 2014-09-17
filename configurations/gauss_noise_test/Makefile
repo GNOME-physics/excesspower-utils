@@ -3,7 +3,7 @@ gps_end=12000
 blocksize=131072
 instrument=L1
 channel=FAKE-STRAIN
-ini_file=gstlal_excesspower.ini
+ini_file=gstlal_excesspower_multiband.ini
 hrss=e+1
 
 all: injections excesspower addTriggers plot
