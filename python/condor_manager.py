@@ -434,10 +434,10 @@ def write_offline_dag(seg, ini_file, cache_file, subd_intrv=3600*4, rootdir='./'
                     try:
                         gps_seg & aseg
                         node.add_parent(anode)
-                        subdag.add_node(node)
-                        uberdag.add_node(node)
                     except ValueError:
                         pass
+                subdag.add_node(node)
+                uberdag.add_node(node)
 
             cur_gps += gps_group
 
