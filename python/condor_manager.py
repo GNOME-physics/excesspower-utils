@@ -362,7 +362,7 @@ def shift_to_overlap(segl, shift, skip_first=True):
 # FIXME: Make loss of whitening time not hardcoded to 120 seconds -- it
 # could be much larger for lower rate channels
 WHITEN_TIME = 120  # s
-def write_offline_dag(seg, ini_file, cache_file, subd_intrv=3600*4, rootdir='./', segments_file=None, segments_name=None, write_script=False, write_subdags=False, clustering=True):
+def write_offline_dag(seg, ini_file, cache_file, trigger_dir=None, subd_intrv=3600*4, rootdir='./', segments_file=None, segments_name=None, write_script=False, write_subdags=False, clustering=True):
     """
     Write a DAG for a set of channels with segments provided through the segment list dictionary (seg_dict). subd_intrv is the interval over which segments larger than this number will be subdivded into individual jobs. Segments of time that are directly adjacent will be overlapped so as not to lose time to whitening effects.
 		FIXME: Fixed PSD options
@@ -371,6 +371,9 @@ def write_offline_dag(seg, ini_file, cache_file, subd_intrv=3600*4, rootdir='./'
     res = cfgp.read(ini_file)
     if res == []:
         raise ValueError("No configuration files read")
+
+    # Where to place triggers (will be rootdir if not specified)
+    trigger_dir = os.path.realpath(trigger_dir or rootdir)
 
     # Expand out the cache file to ensure no relative path names
     cache_file = os.path.abspath(cache_file)
@@ -386,6 +389,9 @@ def write_offline_dag(seg, ini_file, cache_file, subd_intrv=3600*4, rootdir='./'
         ep_job.set_data_source(cache_filename=cache_file)
         if segments_file is not None:
             ep_job.set_segments(segments_filename=segments_file, segments_name=name)
+
+        ep_job.set_config_attr("output-directory", trigger_dir)
+
         ep_job.do_getenv()
         input_path = os.path.join(ep_job.get_config_attr("output-directory"), ep_job.instrument, ep_job.channel.replace(":", "/") + "_excesspower")
         ep_job.finalize()
