@@ -1,6 +1,10 @@
 #!/usr/bin/env python
 import sys
+import os
 import glob
+import math
+import re
+import argparse
 
 import matplotlib
 matplotlib.use("Agg")
@@ -93,11 +97,21 @@ def stack_plot(time, data, lowf=0.0, highf=1.0):
     pyplot.xlabel("time (s), relative to %10.5f" % ts[0])
     pyplot.savefig("fir_bank.png")
 
-scan_data = numpy.load(sys.argv[1])
+#
+# Parse arguments
+#
+argp = argparse.ArgumentParser()
+argp.add_argument("scandata", help="EP scan to plot.")
+argp.add_argument("--logscale", action="store_true", help="Set logscale on frequency axes. Default is off.")
+argp.add_argument("--sim-file", help="Plot injections from this file.")
+argp.add_argument("--output-dir", default='scan', help="Place results in this directory. Default is 'scan'")
+args = argp.parse_args()
 
-#
-# Plot input data time stream
-#
+scan_data = numpy.load(args.scandata)
+if args.logscale:
+    args.logscale = ['y']
+else:
+    args.logscale = []
 
 data_segment = segment(map(float, scan_data["segment"]))
 bandwidth = segment(map(float, scan_data["bandwidth"][:2]))
@@ -108,24 +122,83 @@ print "Data segment: %s\nsearch band: %s (%f Hz channels)" % (str(data_segment),
 # Readjust upper frequency
 band = abs(bandwidth)
 band /= base_band
-highf = bandwidth[0] + int(band)*base_band
-bandwidth = segment(bandwidth[0]+base_band/2, highf-base_band/2)
+highf = bandwidth[0] + int(band)*base_band - base_band/2
+lowf = bandwidth[0]+base_band/2
+bandwidth = segment(lowf, highf)
 
-ts, d = scan_data["time_series"].T
-ts -= data_segment[0]
+band_level = {}
+for level in range(int(math.log(abs(bandwidth)/base_band, 2)+1)):
+    bands = abs(bandwidth) / (base_band*2**level)
+    band_level[level] = segment(bandwidth[0], bandwidth[0]+bands*base_band*2**level)
+    print "Level %d, %d %f Hz channels" % (level, bands, base_band*2**level)
+
+#
+# Plot input data time stream
+#
+
+data_ts, data_d = scan_data["time_series"].T
+data_ts -= data_segment[0]
 
 # TODO: Zoom on certain gps time
 # TODO: triple zoom plots?
 # TODO: D3.js enabled?
 pyplot.figure(0)
-pyplot.plot(ts, d, 'k-')
+pyplot.plot(data_ts, data_d, 'k-')
+scale_axis = pyplot.gca()
 pyplot.grid()
 pyplot.xlabel("time (s), relative to %10.5f" % data_segment[0])
 pyplot.ylabel("strain")
 pyplot.savefig("input_data.png")
 
-# in case memory is a problem
-del ts, d
+#
+# Plot injection if provided
+#
+window = data_ts[-1] - data_ts[0]
+dt = data_ts[-1] - data_ts[-2]
+# FIXME: It's possible, though unlikely that an inspiral can sweep through this window without
+# being identified
+injection_window = segment(data_ts[0] - 10*window + data_segment[0], data_ts[-1] + 10*window + data_segment[0])
+if args.sim_file and os.path.exists(args.sim_file):
+    import lal, lalsimulation
+    from glue.ligolw import utils, lsctables
+    xmldoc = utils.load_filename(args.sim_file)
+
+    from burst_utils import SimBurstWaveform
+    injection_ts = lal.CreateREAL8TimeSeries(
+        name = "injection time series",
+        epoch = lal.LIGOTimeGPS(injection_window[0]),
+        f0 = 0,
+        deltaT = dt,
+        sampleUnits = lal.lalStrainUnit,
+        length = int(abs(injection_window)/dt)
+    )
+
+    print "Injection window: %s" % str(injection_window)
+    try:
+        for sim in lsctables.SimBurstTable.get_table(xmldoc):
+            if sim.get_time_geocent() not in injection_window:
+                continue
+            print "Found sim burst (%s) at %10.9f" % (sim.waveform, float(sim.get_time_geocent()))
+            sim_waveform = SimBurstWaveform.from_SimBurst(sim)
+            waveform_ts = sim_waveform.time_series(int(1.0/injection_ts.deltaT), detector = "H1")
+            # FIXME: TEMPORARY!
+            if waveform_ts.epoch < 10:
+                # Challenge: I wonder if we could make this any more obtuse
+                waveform_ts.epoch += lal.LIGOTimeGPS(float(sim.get_time_geocent()))
+            lalsimulation.SimAddInjectionREAL8TimeSeries(injection_ts, waveform_ts, None)
+            
+    except ValueError:
+        pass # NOTE: get_table is # == 1 (so more could be a problem)
+
+    try:
+        lsctables.SimInspiralTable.get_table(xmldoc)
+        raise NotImplementedError("Haven't done this yet. Too lazy.")
+    except ValueError:
+        pass # NOTE: get_table is # == 1 (so more could be a problem)
+
+    # Now clip injection series
+    t1, t2 = data_segment[0] - float(injection_ts.epoch), data_segment[1] - float(injection_ts.epoch)
+    injection_ts = lal.CutREAL8TimeSeries(injection_ts, int(t1/dt), int((t2-t1)/dt))
 
 #
 # Plot whitened data time stream
@@ -136,12 +209,27 @@ ts, d = scan_data["white_series"].T
 ts -= data_segment[0]
 
 pyplot.plot(ts, d, 'r-')
-pyplot.grid()
 pyplot.xlabel("time (s), relative to %10.5f" % data_segment[0])
 pyplot.ylabel("whitened strain")
 pyplot.xlim((0, abs(data_segment)))
+# symmetrize y limits
+ylim = max(map(abs, pyplot.ylim()))
+pyplot.ylim(-ylim, ylim)
 pyplot.savefig("input_data.png")
 #pyplot.savefig("white_data.png")
+
+# NOTE: This is here because the whitened time series will often block out the injection
+if args.sim_file:
+    # We plot this on the 'whitened data' axis because twinx always produces a new axis which
+    # draws on top regardless.
+    scale_factor = scale_axis.get_ylim()[0]/pyplot.gca().get_ylim()[0]
+    pyplot.plot(data_ts, injection_ts.data.data/scale_factor, 'b-')
+    pyplot.grid()
+    pyplot.savefig("input_data.png")
+
+# in case memory is a problem
+del data_ts, data_d, ts, d
+
 
 #
 # Plot FIR processed data
@@ -152,27 +240,22 @@ ts, d = d[0], d[1:]
 #ts -= data_segment[0]
 stack_plot(ts, d, bandwidth[0], bandwidth[1])
 
-plot_tf_map(d, "fir_data.png", data_segment, bandwidth, ts=ts)
+plot_tf_map(d, "fir_data.png", data_segment, bandwidth, logscale=args.logscale, ts=ts)
 
-# norm fir_data
-#d *= 0.044194
-
-# simulate undersampling
-#d = d.T[::2**5].T
-#ts = ts[::2**5]
-#plot_tf_map(d**2, "us_fir_data.png", data_segment, bandwidth)
-
-#del ts, d
+# TODO: norm fir_data
 
 #
 # Find all TF maps saved
 #
+regx = re.compile("level_(\d+)_dof_(\d+)")
 for key in filter(lambda s: "sq_sum_series_" in s, scan_data.files):
     print key
+    res = re.search(regx, key)
+    level, ndof = int(res.group(1)), int(res.group(2))
     d = scan_data[key].T
     ts, d = d[0], d[1:]
     #ts -= data_segment[0]
-    plot_tf_map(d, key + ".png", data_segment, bandwidth, ts=ts)
+    plot_tf_map(d, key + ".png", data_segment, band_level[level], logscale=args.logscale, ts=ts)
     del ts, d
 
 #
@@ -181,9 +264,9 @@ for key in filter(lambda s: "sq_sum_series_" in s, scan_data.files):
 import os
 from glue import cbcwebpage
 
-if not os.path.exists("scan/"):
-    os.makedirs("scan/")
-os.chdir("scan/")
+if not os.path.exists(args.output_dir):
+    os.makedirs(args.output_dir)
+os.chdir(args.output_dir)
 page = cbcwebpage.cbcpage(title="ExcessPower TF Scan", path="./")
 
 subp = page.add_subpage("overview", "ExcessPower Scan Overview", "ExcessPower Scan Overview")
@@ -202,7 +285,7 @@ ts_data = page.add_subpage("ts_data", "Time Series Data", "Time Series Data")
 ts_sec = ts_data.add_section("ts_data_1", "Time Series")
 imgtab = cbcwebpage.image_glob("../input_data.png")
 cap = "Time series data"
-cap1 = "Black shows the input time series, and red is the whitened time series."
+cap1 = "Black shows the input time series, and red is the whitened time series. The blue trace is the injection (unwhitened) if applicable."
 ts_sec.add_table(imgtab, cap, cap1)
 
 fir_data = page.add_subpage("fir_data", "Filter Response", "Filter Response Data")
@@ -234,7 +317,7 @@ while True:
     sq_sum_sec.add_table(imgtab, cap, cap1)
 
 import glob
-flist = glob.glob("../L1-*.xml.gz")
+flist = glob.glob("../H1-*.xml.gz")
 if flist:
     trig_info_data = page.add_subpage("trig_info_data", "Trigger Table", "Trigger Info")
 
