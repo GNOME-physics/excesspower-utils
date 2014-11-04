@@ -148,7 +148,7 @@ L1_aligo_noise.cache:
 	find ${NOISE_DEST}/ -name "L-*.gwf" | lalapps_path2cache > L1_aligo_noise.cache
 
 V1_aligo_noise.cache:
-	gstlal_fake_frames --gps-start-time ${START} --gps-end-time ${STOP} --channel V1=${INJ_CHANNEL_NAME} --verbose --data-source AdvLIGO --output-channel ${INJ_CHANNEL_NAME} --frame-type V1_${NOISE_FRAME_TYPE} --output-path ${NOISE_DEST} --frame-duration ${LIGO_FRAME_DURATION} --frames-per-file ${LIGO_N_FRAMES}
+	gstlal_fake_frames --gps-start-time ${START} --gps-end-time ${STOP} --channel V1=${INJ_CHANNEL_NAME} --verbose --data-source AdvVirgo --output-channel ${INJ_CHANNEL_NAME} --frame-type V1_${NOISE_FRAME_TYPE} --output-path ${NOISE_DEST} --frame-duration ${LIGO_FRAME_DURATION} --frames-per-file ${LIGO_N_FRAMES}
 	find ${NOISE_DEST}/ -name "V-*.gwf" | lalapps_path2cache > V1_aligo_noise.cache
 
 H1_combined.cache: H1_aligo_noise.cache H1_aligo_inject.cache
