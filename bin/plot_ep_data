@@ -16,12 +16,15 @@ import numpy
 
 from glue.segments import segment
 
-def plot_tf_map(data, fname, data_segment, bandwidth, logscale=None, interp="nearest", ts=None, transform=None):
+def plot_tf_map(data, fname, data_segment, bandwidth, logscale=None, interp="nearest", ts=None, transform=None, thresh=None):
     pyplot.figure(2)
     pyplot.clf()
     #print fname, numpy.abs(data).max()
     if ts is not None:
         data_segment = (ts[0], ts[-1] + ts[1] - ts[0])
+
+    if thresh is not None:
+        data = numpy.ma.masked_inside(data, -thresh, thresh)
 
     if logscale is None:
         if transform:
@@ -68,8 +71,16 @@ def plot_tf_map(data, fname, data_segment, bandwidth, logscale=None, interp="nea
 
     pyplot.xlabel("time (s), relative to %10.5f" % data_segment[0])
     pyplot.ylabel("frequency (Hz)")
-    pyplot.colorbar()
+    if not thresh:
+        pyplot.colorbar()
+    else:
+        if (data.all() is numpy.ma.masked):
+            pyplot.clim(0, 1)
+            pyplot.colorbar()
+        else:
+            pyplot.colorbar()
     pyplot.savefig(fname)
+    return fname
 
 def stack_plot(time, data, lowf=0.0, highf=1.0):
 
@@ -96,6 +107,9 @@ def stack_plot(time, data, lowf=0.0, highf=1.0):
     pyplot.xlim( (ts[0], ts[-1]) )
     pyplot.xlabel("time (s), relative to %10.5f" % ts[0])
     pyplot.savefig("fir_bank.png")
+    return "fir_bank.png"
+
+figs_to_delete = []
 
 #
 # Parse arguments
@@ -104,7 +118,9 @@ argp = argparse.ArgumentParser()
 argp.add_argument("scandata", help="EP scan to plot.")
 argp.add_argument("--logscale", action="store_true", help="Set logscale on frequency axes. Default is off.")
 argp.add_argument("--sim-file", help="Plot injections from this file.")
-argp.add_argument("--output-dir", default='scan', help="Place results in this directory. Default is 'scan'")
+argp.add_argument("--output-dir", default='scan', help="Place results in this directory. Default is 'scan'.")
+argp.add_argument("--trigger-xml", action='append', help="List triggers from this xml file. Can be provided multiple times.")
+argp.add_argument("--trigvis-plot", help="Trigger plot. Typically made by gstlal_excesspower_trigvis.")
 args = argp.parse_args()
 
 scan_data = numpy.load(args.scandata)
@@ -112,6 +128,9 @@ if args.logscale:
     args.logscale = ['y']
 else:
     args.logscale = []
+
+if args.trigvis_plot:
+    args.trigvis_plot = os.path.abspath(args.trigvis_plot)
 
 data_segment = segment(map(float, scan_data["segment"]))
 bandwidth = segment(map(float, scan_data["bandwidth"][:2]))
@@ -149,6 +168,7 @@ pyplot.grid()
 pyplot.xlabel("time (s), relative to %10.5f" % data_segment[0])
 pyplot.ylabel("strain")
 pyplot.savefig("input_data.png")
+figs_to_delete.append(os.path.abspath("input_data.png"))
 
 #
 # Plot injection if provided
@@ -238,9 +258,11 @@ del data_ts, data_d, ts, d
 d = scan_data["filter_series"].T
 ts, d = d[0], d[1:]
 #ts -= data_segment[0]
-stack_plot(ts, d, bandwidth[0], bandwidth[1])
+fname = stack_plot(ts, d, bandwidth[0], bandwidth[1])
+figs_to_delete.append(os.path.abspath(fname))
 
 plot_tf_map(d, "fir_data.png", data_segment, bandwidth, logscale=args.logscale, ts=ts)
+figs_to_delete.append(os.path.abspath("fir_data.png"))
 
 # TODO: norm fir_data
 
@@ -255,7 +277,13 @@ for key in filter(lambda s: "sq_sum_series_" in s, scan_data.files):
     d = scan_data[key].T
     ts, d = d[0], d[1:]
     #ts -= data_segment[0]
-    plot_tf_map(d, key + ".png", data_segment, band_level[level], logscale=args.logscale, ts=ts)
+    fname = plot_tf_map(d, key + ".png", data_segment, band_level[level], logscale=args.logscale, ts=ts)
+    figs_to_delete.append(os.path.abspath(fname))
+
+    from gstlal import excesspower
+    e_thresh = excesspower.determine_thresh_from_fap(1e-8, ndof)**2
+    fname = plot_tf_map(d, key + "_masked.png", data_segment, band_level[level], logscale=args.logscale, ts=ts, thresh=e_thresh)
+    figs_to_delete.append(os.path.abspath(fname))
     del ts, d
 
 #
@@ -263,6 +291,11 @@ for key in filter(lambda s: "sq_sum_series_" in s, scan_data.files):
 #
 import os
 from glue import cbcwebpage
+
+#
+# Sort out absolute paths first
+#
+flist = map(os.path.abspath, args.trigger_xml)
 
 if not os.path.exists(args.output_dir):
     os.makedirs(args.output_dir)
@@ -316,39 +349,37 @@ while True:
     cap1 = "Color corresponds to energy of a given tile."
     sq_sum_sec.add_table(imgtab, cap, cap1)
 
-import glob
-flist = glob.glob("../H1-*.xml.gz")
-if flist:
-    trig_info_data = page.add_subpage("trig_info_data", "Trigger Table", "Trigger Info")
-
 # Merge XML docs into one
 from glue.ligolw.utils import ligolw_add, print_tables
 from glue.ligolw import utils, lsctables
-if len(flist) > 1:
+if flist:
     xmldoc = utils.load_filename(flist[0])
-    ligolw_add.ligolw_add(xmldoc, flist[1:])
+    if len(flist) > 1:
+        ligolw_add.ligolw_add(xmldoc, flist[1:])
 
-trig_info_sec = trig_info_data.add_section("trig_info", "Trigger Table")
+    trig_info_data = page.add_subpage("trig_info_data", "Trigger Table", "Trigger Info")
 
-"""
-with open("triggers.txt", "w") as fout:
-    trig_table = print_tables.print_tables(xmldoc, fout, "wiki", tableList=[lsctables.SnglBurstTable.tableName], title="SnglBurst triggers", columnList=["channel", "snr", "peak_time", "peak_time_ns", "duration", "central_freq", "bandwidth", "chisq_dof"])
-ttable, name = cbcwebpage.wiki_table_parse("triggers.txt")
+    with open("triggers.txt", "w") as fout:
+        trig_table = print_tables.print_tables(xmldoc, fout, "wiki", tableList=[lsctables.SnglBurstTable.tableName], title="SnglBurst triggers", columnList=["channel", "snr", "peak_time", "peak_time_ns", "duration", "central_freq", "bandwidth", "chisq_dof"])
+    ttable, name = cbcwebpage.wiki_table_parse("triggers.txt")
 
-trig_info_sec.add_table(ttable[0], "Trigger table", "Table of trigger information. Channel indicates the channel analyzed, peak_time and peak_time_ns are the seconds and nanosecond field of the central time for each tile, duration is the width of the tile in the time domain, central frequency is the center frequency of the tile, bandwidth is the width of the tile in the frequency domain, and chisq_dof is the number of degrees of freedom present in that tile.")
-"""
+    trig_info_sec = trig_info_data.add_section("trig_info", "Trigger Table")
+    trig_info_sec.add_table(ttable[0], "Trigger table", "Table of trigger information. Channel indicates the channel analyzed, peak_time and peak_time_ns are the seconds and nanosecond field of the central time for each tile, duration is the width of the tile in the time domain, central frequency is the center frequency of the tile, bandwidth is the width of the tile in the frequency domain, and chisq_dof is the number of degrees of freedom present in that tile.")
 
-trig_info_sec.div("<br />Full Results XML<br />")
-for file in flist:
-    trig_info_sec.add_link(text="%s" % file, href=file)
+    trig_info_sec.div("<br />Full Results XML<br />")
+    trig_info_sec.div("<br />".join(flist))
+    #trig_info_sec.add_link(text="%s" % file, href=file)
     trig_info_sec.div("<br />")
 
-if os.path.exists("../trigmap.png"):
+if args.trigvis_plot and os.path.exists(args.trigvis_plot):
     trig_map_data = page.add_subpage("trig_map_data", "Trigger Maps", "Trigger Maps")
     trig_map_sec = trig_map_data.add_section("trigmap", "Trigger TF maps")
-    imgtab = cbcwebpage.image_glob("../trigmap.png")
+    imgtab = cbcwebpage.image_glob(args.trigvis_plot)
     cap = "Trigger map"
     cap1 = "Color corresponds to SNR."
     trig_map_sec.add_table(imgtab, cap, cap1)
 
 page.write("index")
+
+for fname in figs_to_delete:
+    os.remove(fname)
