@@ -353,7 +353,9 @@ while True:
 
     dof = 1
     while True:
-        imglob = [glue.lal.CacheEntry("", "", (), "file://" + os.path.abspath(f)) for f in glob.glob("../sq_sum_series_level_%d_*.png" % i) if "dof_%d" % dof in f]
+        #imglob = [glue.lal.CacheEntry("", "", (), "file://" + os.path.abspath(f)) for f in glob.glob("../sq_sum_series_level_%d_dof_%d[.|_masked.]png" % (i, dof))]# if "dof_%d" % dof in f]
+        # All this is because glob.glob isn't smart enough
+        imglob = [glue.lal.CacheEntry("", "", (), "file://" + os.path.abspath(f)) for f in glob.glob("../sq_sum_series_level_%d_dof_%d*.png" % (i, dof)) if "dof_%d_" % dof in f or "dof_%d." % dof in f]
         if not imglob:
             break
         dt = 1.0/band/2*dof
