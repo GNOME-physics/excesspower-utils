@@ -7,4 +7,4 @@ max-bandwidth = 256
 
 [triggering]
 fap-thresh = 1.000000e-07
-
+output-directory=
