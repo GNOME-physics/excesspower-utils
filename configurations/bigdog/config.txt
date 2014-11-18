@@ -1,0 +1,10 @@
+[tf_parameters]
+max-frequency = 2040.0
+max-duration = 1
+min-frequency = 32.0
+min-bandwidth = 1
+max-bandwidth = 256
+
+[triggering]
+fap-thresh = 1.000000e-07
+
