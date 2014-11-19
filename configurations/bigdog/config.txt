@@ -2,7 +2,7 @@
 max-frequency = 2040.0
 max-duration = 1
 min-frequency = 32.0
-min-bandwidth = 1
+min-bandwidth = 2
 max-bandwidth = 256
 
 [triggering]
