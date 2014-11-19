@@ -17,11 +17,19 @@ v1_available_data:
 	ligo_data_find -o V --show-times -t ${L1_FRTYPE}
 
 big_dog.cache:
-	ligo_data_find -o H -s ${START} -e ${END} -t ${H1_FRTYPE} -u file -l > .h1tmp.cache
-	ligo_data_find -o L -s ${START} -e ${END} -t ${L1_FRTYPE} -u file -l > .l1tmp.cache
-	ligo_data_find -o V -s ${START} -e ${END} -t ${V1_FRTYPE} -u file -l > .v1tmp.cache
+	ligo_data_find --gaps -o H -s ${START} -e ${END} -t ${H1_FRTYPE} -u file -l > .h1tmp.cache
+	ligo_data_find --gaps -o L -s ${START} -e ${END} -t ${L1_FRTYPE} -u file -l > .l1tmp.cache
+	ligo_data_find --gaps -o V -s ${START} -e ${END} -t ${V1_FRTYPE} -u file -l > .v1tmp.cache
 	cat .h1tmp.cache .l1tmp.cache .v1tmp.cache > $@
 	rm .h1tmp.cache .l1tmp.cache .v1tmp.cache
 
+excesspower.dag: big_dog.cache
+	PYTHONPATH=/home/pankow/excesspower/excesspower-utils/python:${PYTHONPATH} \
+	/home/pankow/excesspower/excesspower-utils/bin/ep_trigger_pipe \
+		--gps-start-time ${START} \
+		--gps-end-time ${END} \
+		--subsystem-ini-file s6_strain.ini \
+		--frame-cache $< \
+		--trigger-directory /home/pankow/excesspower/excesspower-utils/configurations/bigdog \
+		--write-script
 
-#excesspower.dag
