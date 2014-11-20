@@ -115,7 +115,7 @@ def import_burstmdc_log( fname, pid, tsid, simb_table = None ):
 #
 
 optp = OptionParser()
-optp.add_option( "-i", "--input-file", action="store", help="This file is required to have a time_slide table. Required." )
+optp.add_option( "-t", "--time-slide-file", action="store", help="This file is required to have a time_slide table. Required." )
 optp.add_option( "-o", "--output-file", action="store", default=None, help="Write the output to this file. Default is stdout." )
 options, args = optp.parse_args()
 
@@ -142,7 +142,7 @@ try:
 	simbursts = table.get_table( time_slide_table, lsctables.SimBurstTable.tableName )
 	for arg in args:
 		simbursts.append( import_burstmdc_log( arg, procrow.process_id, tsid, simbursts ) )
-	
+
 except ValueError:
 	simbursts = import_burstmdc_log( args[0], procrow.process_id, tsid )
 	for arg in args[1:]:
