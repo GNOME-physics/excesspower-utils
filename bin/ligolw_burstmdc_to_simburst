@@ -25,6 +25,8 @@ from optparse import OptionParser
 from glue.ligolw import utils, table, lsctables, ligolw
 from glue.ligolw.utils import process
 
+import lal
+
 from collections import namedtuple, defaultdict
 
 #
@@ -67,6 +69,22 @@ def parse_wnb_params( simname ):
 	"""
 	raise NotImplementedError
 
+def convert_skyloc(external_x, external_phi, gpstime):
+    """
+    Convert burstMDC 'external angles' to right ascension and declination
+    """
+
+    sp_old = lal.SkyPosition()
+    sp_old.latitude = math.acos(float(external_x)) + math.pi/2
+    sp_old.longitude = float(external_phi) + math.pi
+    sp_old.system = lal.COORDINATESYSTEM_GEOGRAPHIC
+
+    sp_new = lal.SkyPosition()
+    sp_new.system = lal.COORDINATESYSTEM_EQUATORIAL
+    lal.GeographicToEquatorial(sp_new, sp_old, gpstime)
+
+    return sp_new.latitude, sp_new.longitude
+
 def import_burstmdc_log( fname, pid, tsid, simb_table = None ):
 	"""
 	Convert the BurstMDC log fname into a SimBurst table with appropriately linked process and time_slide ids.
@@ -104,13 +122,13 @@ def import_burstmdc_log( fname, pid, tsid, simb_table = None ):
 			#row.duration, row.frequency, row.bandwidth = None, None, None
 			row.duration, row.frequency, row.bandwidth, row.q = None, None, None, None
 		row.process_id = pid
-		row.ra = float(entry.External_phi)
-		row.dec = float(entry.External_x)
-		# FIXME: Too lazy
-		row.time_geocent_gmst = 0.0
 		row.time_slide_id = tsid
-		
-		simb_table.append( row )
+        row.time_geocent_gmst = \
+                math.fmod(lal.GreenwichMeanSiderealTime(row.time_geocent_gps),
+                        2*math.pi)
+        row.dec, row.ra = convert_skyloc(entry.External_x, entry.External_phi,
+                lal.LIGOTimeGPS(row.time_geocent_gps, row.time_geocent_gps_ns))
+        simb_table.append( row )
 	return simb_table
 
 #
