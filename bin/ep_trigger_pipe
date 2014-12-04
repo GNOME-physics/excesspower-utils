@@ -22,8 +22,8 @@ args = parser.parse_args()
 run_seg = segment(args.gps_start, args.gps_end)
 
 # TODO: Add root directory path
-os.mkdirs(os.path.abspath("./caches"))
-exit()
+if not os.path.exists(os.path.abspath("./caches")):
+    os.makedirs(os.path.abspath("./caches"))
 
 if args.no_cluster:
 	clustering = False
