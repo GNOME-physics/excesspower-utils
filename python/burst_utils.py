@@ -37,7 +37,7 @@ def copy_sim_burst(row):
 
 LAL_DETECTORS = dict(zip(
     [getattr(lal, name) for name in dir(lal) if name.endswith("DETECTOR_PREFIX")],
-    [lal.CachedDetectors[d] for d in [getattr(lal, name) for name in dir(lal) if name.endswith("DETECTOR")]]
+    [lal.lalCachedDetectors[d] for d in [getattr(lal, name) for name in dir(lal) if name.endswith("DETECTOR")]]
 ))
 
 class SimBurstWaveform(lsctables.SimBurst):
@@ -61,10 +61,7 @@ class SimBurstWaveform(lsctables.SimBurst):
         Generate a time series at a given sampling_rate (Hz) for the waveform using a call to lalsimulation. If detector is None (default), return only the (h+, hx) tuple. Otherwise, apply the proper detector anntenna patterns and return the resultant series F+h+ + Fxhx.
         """
 
-        time = self.time_geocent_gps
         hp, hx = lalburst.GenerateSimBurst(copy_sim_burst(self), 1.0/sampling_rate)
-        #hp.epoch += time
-        #hx.epoch += time
 
         if detector is None:
             return hp, hx
