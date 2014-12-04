@@ -373,7 +373,7 @@ def write_offline_dag(seg, ini_file, cache_file, trigger_dir=None, subd_intrv=36
         raise ValueError("No configuration files read")
 
     # Where to place triggers (will be rootdir if not specified)
-    trigger_dir = os.path.realpath(trigger_dir or rootdir)
+    trigger_dir = os.path.realpath(os.path.expanduser(trigger_dir or rootdir))
 
     # Expand out the cache file to ensure no relative path names
     cache_file = os.path.abspath(cache_file)
