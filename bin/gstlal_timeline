@@ -2,6 +2,10 @@
 import sys
 import re
 from collections import defaultdict
+from argparse import ArgumentParser
+import time
+from curses.wrapper import wrapper
+import curses
 
 import matplotlib
 matplotlib.use("agg")
@@ -9,18 +13,26 @@ from matplotlib import pyplot
 
 import numpy
 
+argp = ArgumentParser()
+argp.add_argument("-r", "--refresh-interval", type=float, default=0.1, help="Refresh interval in seconds. Default is 0.1 s.")
+argp.add_argument("-s", "--timeline-start", type=float, default=None, help="Where to begin the timeline. Default is None, e.g. at start (0).")
+argp.add_argument("-e", "--timeline-end", type=float, default=None, help="Where to end the timeline. Default is None, e.g. at end of logfile.")
+argp.add_argument("-o", "--output-plot-name", default="timeline.png", help="Name of plot output.")
+argp.add_argument("-n", "--no-display-element", action="append", help="If this string is in the element name, ignore it.")
+argp.add_argument("-N", "--no-term-output", action="store_true", help="Do not output the timeline to the terminal.")
+argp.add_argument("logfile", help="File to process")
+args = argp.parse_args()
+
 pattern = re.compile("(.*)\(([0-9]+:[0-9]+:[0-9]+)\): ([0-9]+) seconds")
 
-with open(sys.argv[1]) as inf:
+with open(args.logfile) as inf:
     input = inf.readlines()
 
 real_typedict = defaultdict(list)
 stream_typedict = defaultdict(list)
 
 #no_display = ["Trigger", "After", "Undersampled", "Energy"]
-no_display = []
-
-import curses
+#no_display = []
 
 def main(stdscr):
     curses.init_pair(1, curses.COLOR_GREEN, curses.COLOR_BLACK)
@@ -35,18 +47,26 @@ def main(stdscr):
 
         #import pdb; pdb.set_trace()
         type, real_time, stream_time = match.group(1).strip(), match.group(2), float(match.group(3))
-        if any([nod in type for nod in no_display]): continue
+        if any([nod in type for nod in args.no_display_element]): continue
         hr, mn, s = real_time.split(":")
         real_time = float(s) + (float(mn) + float(hr)*60)*60
+
+        if args.timeline_start and args.timeline_start > real_time:
+            continue
+        if args.timeline_end and args.timeline_end < real_time:
+            continue
+
         real_typedict[type].append(real_time)
         stream_typedict[type].append(stream_time)
 
-        import operator
         latest_stream = sorted([(tm[-1], e) for e, tm in stream_typedict.iteritems()])
         earliest_stream = latest_stream[0]
         latest_stream = latest_stream[-1]
         overall_latency = latest_stream[0] - earliest_stream[0]
         max_diff = max(overall_latency, max_diff)
+
+        if args.no_term_output:
+            continue
 
         #print type, real_time, stream_time
         elems = stream_typedict.keys()
@@ -68,20 +88,16 @@ def main(stdscr):
             pass
         stdscr.refresh()
 
-        import time
-        time.sleep(0.1)
+        time.sleep(args.refresh_interval)
 
-from curses.wrapper import wrapper
 wrapper(main)
-
-print "done"
 
 mints = min([min(v) for v in stream_typedict.values()])
 
 pyplot.figure()
 maxts = 0
 for typ, array in stream_typedict.iteritems():
-    if "Trigger" in typ: continue
+    #if "Trigger" in typ: continue
     st = numpy.array(array) - mints
     plt = sorted(zip(real_typedict[typ], st))
     plt = numpy.transpose(plt)
@@ -92,6 +108,6 @@ for typ, array in stream_typedict.iteritems():
 pyplot.ylabel("stream time")
 pyplot.xlabel("real time")
 pyplot.grid()
-pyplot.legend(loc="lower right")
+#pyplot.legend(loc="lower right")
 
-pyplot.savefig("timeline.png")
+pyplot.savefig(args.output_plot_name)
