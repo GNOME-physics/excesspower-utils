@@ -37,7 +37,7 @@ def copy_sim_burst(row):
 
 LAL_DETECTORS = dict(zip(
     [getattr(lal, name) for name in dir(lal) if name.endswith("DETECTOR_PREFIX")],
-    [lal.lalCachedDetectors[d] for d in [getattr(lal, name) for name in dir(lal) if name.endswith("DETECTOR")]]
+    [lal.CachedDetectors[d] for d in [getattr(lal, name) for name in dir(lal) if name.endswith("DETECTOR")]]
 ))
 
 class SimBurstWaveform(lsctables.SimBurst):
