@@ -615,7 +615,10 @@ for src in srcs:
 
         # string paramters
         row.waveform = src.waveform
-        row.numrel_data = src.numrel_data
+        try:
+            row.numrel_data = src.numrel_data
+        except AttributeError:
+            pass
 
         # time parameters
         row.set_time_geocent(GPS(float(t)))
